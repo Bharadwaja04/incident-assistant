@@ -1,0 +1,6 @@
+{"name": "missing time", "turns": ["Smoke in the kitchen.", "It was around 6 PM"], "final": {"incident_type": "fire", "location": "kitchen", "time": "18:00", "severity": "high"}}
+{"name": "short answers", "turns": ["Printer not working in finance department", "10 in the morning"], "final": {"incident_type": "equipment_failure", "time": "10:00"}}
+{"name": "vague start, combined question", "turns": ["A pipe burst", "second floor washroom", "7 AM"], "final": {"incident_type": "water_leak", "location": "second floor washroom", "time": "07:00"}}
+{"name": "complete in one go", "turns": ["Fire in the server room at 3 PM, critical, fire brigade called."], "final": {"incident_type": "fire", "location": "server room", "time": "15:00", "severity": "critical"}}
+{"name": "plan walkthrough (slip near cafeteria)", "turns": ["Someone slipped near the cafeteria and hurt their ankle.", "About twenty minutes ago. It was Priya from accounts, and Ravi saw it."], "final": {"incident_type": "injury", "location": "cafeteria", "time": "20:40", "severity": "high", "persons_involved": true, "witnesses": true}}
+{"name": "room name repaired", "turns": ["There was a water leak near conference room too around 10 AM. Maintenance has already isolated the area."], "final": {"incident_type": "water_leak", "location": "conference room 2", "time": "10:00", "immediate_actions": true}}

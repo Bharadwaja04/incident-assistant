@@ -1,0 +1,8 @@
+{"raw":"Uh, there was a s-s-small fire in the in the kitchen at 6, no sorry, 6:15 PM","cleaned":"There was a small fire in the kitchen at 6:15 PM","accept":true}
+{"raw":"the the lift is is stuck block B two people inside","cleaned":"The lift is stuck in block B, two people inside","accept":true}
+{"raw":"no one was hurt, nothing serious","cleaned":"No one was hurt, nothing serious","accept":true}
+{"raw":"there was a fire in the kitchen at 6:15 PM","cleaned":"There was a fire in the kitchen at 6:45 PM","accept":false}
+{"raw":"small fire in the kitchen, it was not serious","cleaned":"Small fire in the kitchen, it was serious","accept":false}
+{"raw":"water leak near the cafeteria and the server room at 10 AM","cleaned":"Water leak near the cafeteria at 10 AM","accept":false}
+{"raw":"a worker slipped near the loading dock","cleaned":"A worker slipped near the loading dock and was badly injured","accept":false}
+{"raw":"uh hmm the the fire","cleaned":"","accept":false}

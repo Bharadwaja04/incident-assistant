@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Incident Assistant</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#16181d;--mut:#6a7280;--line:#e2e5ea;--acc:#1f6feb;--acc-ink:#fff;--ok:#1a7f4b;--warn-bg:#fff4cc;--warn:#8a6100;--bad:#d1242f;--bad-bg:#ffebe9;--grey-bg:#eceff3;--mark:#ffe58a}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--ink:#eceef2;--mut:#98a1af;--line:#2a2f38;--acc:#4c8dff;--acc-ink:#fff;--ok:#3fb27f;--warn-bg:#3a2f0b;--warn:#f0c14b;--bad:#ff6b6b;--bad-bg:#3b1618;--grey-bg:#242932;--mark:#6b5a12}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header{flex-wrap:wrap}header h1{font-size:18px;margin:0;flex:1}
+@media (max-width:560px){header h1{font-size:16px;flex:1 1 100%}#offline{font-size:12px}}
+.pill{font-size:13px;padding:4px 10px;border-radius:999px;background:var(--grey-bg);color:var(--mut);white-space:nowrap}
+.pill.on{background:#e3f6ec;color:var(--ok)}@media (prefers-color-scheme:dark){.pill.on{background:#10301f}}
+nav{display:flex;gap:6px}
+nav button{border:0;background:none;color:var(--mut);font:inherit;padding:8px 12px;border-radius:8px;min-height:44px}
+nav button.cur{background:var(--grey-bg);color:var(--ink);font-weight:600}
+main{max-width:1100px;margin:0 auto;padding:16px}
+.grid{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
+@media (max-width:760px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.card h2{font-size:14px;margin:0 0 10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.status{display:inline-block;margin-bottom:10px}
+#log{min-height:220px;max-height:46vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.b{max-width:85%;padding:10px 14px;border-radius:14px}
+.b.bot{background:var(--grey-bg);align-self:flex-start}
+.b.me{background:var(--acc);color:var(--acc-ink);align-self:flex-end}
+.b.note{align-self:center;color:var(--mut);font-size:13px}
+.controls{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:14px}
+#mic{width:96px;height:96px;border-radius:50%;border:0;background:var(--acc);color:#fff;font-size:34px;cursor:pointer;box-shadow:0 4px 14px #0003}
+#mic.rec{background:var(--bad);animation:pulse 1.2s infinite}
+#mic:disabled{opacity:.4;cursor:not-allowed}
+@keyframes pulse{0%{box-shadow:0 0 0 0 #d1242f66}100%{box-shadow:0 0 0 24px #d1242f00}}
+.hint{font-size:13px;color:var(--mut);text-align:center}
+.confirm{display:flex;gap:12px;margin-top:12px}
+.confirm button{flex:1;min-height:56px;font-size:18px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+.confirm button.y{background:var(--ok);color:#fff;border-color:var(--ok)}
+form.typed{display:flex;gap:8px;width:100%}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:44px;width:100%}
+button.primary:disabled{opacity:.4;cursor:not-allowed}
+button.primary{background:var(--acc);color:var(--acc-ink);border:0;border-radius:12px;padding:12px 20px;min-height:48px;font:inherit;font-weight:600;cursor:pointer}
+button.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:10px 16px;min-height:44px;font:inherit;cursor:pointer}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:6px 12px;border-radius:999px;background:var(--grey-bg);color:var(--mut);font-size:14px}
+.chip.ok{background:#e3f6ec;color:var(--ok)}@media (prefers-color-scheme:dark){.chip.ok{background:#10301f}}
+.live dl{margin:12px 0 0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:15px}
+.live dt{color:var(--mut)}.live dd{margin:0}
+.row{display:grid;grid-template-columns:150px 1fr auto;gap:10px;align-items:start;padding:12px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;background:var(--card);cursor:pointer}
+.row .lab{color:var(--mut);font-size:14px;padding-top:2px}
+.row .val{min-height:24px;word-break:break-word}
+.row.bad{border-color:var(--bad);background:var(--bad-bg)}
+.row.grey{background:var(--grey-bg);border-style:dashed}
+.row.foc{outline:2px solid var(--acc)}
+.badge{font-size:12px;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.badge.warn{background:var(--warn-bg);color:var(--warn)}
+.badge.bad{background:var(--bad-bg);color:var(--bad);border:1px solid var(--bad)}
+.badge.req{background:var(--grey-bg);color:var(--mut)}
+.row small{display:block;color:var(--mut);margin-top:2px}
+@media (max-width:560px){.row{grid-template-columns:1fr auto}.row .lab{grid-column:1/-1}}
+mark{background:var(--mark);color:inherit;border-radius:4px;padding:0 2px}
+#tx{white-space:pre-wrap;color:var(--mut)}
+.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.done{text-align:center;padding:40px 16px}
+.done .tick{font-size:64px;color:var(--ok)}
+.hist{display:flex;flex-direction:column;gap:8px}
+.hist .item{padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);cursor:pointer}
+.hist .item small{color:var(--mut)}
+.err{color:var(--bad);margin-top:8px}
+.timings{font-size:12px;color:var(--mut);margin-top:8px;text-align:right}
+.switches{display:flex;gap:16px;flex-wrap:wrap;font-size:14px;color:var(--mut)}
+.switches label{display:flex;align-items:center;gap:6px}.switches input{width:auto;min-height:0}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Incident Assistant</h1>
+  <span class="pill on" id="offline">● On-device · no cloud</span>
+  <nav><button id="n-record" class="cur">Report</button><button id="n-history">History</button></nav>
+</header>
+<main>
+
+<section id="v-record">
+  <div class="grid">
+    <div class="card">
+      <span class="pill status" id="status">Ready</span>
+      <div id="log" aria-live="polite"></div>
+      <div class="confirm" id="confirm" hidden><button class="y" id="yes">Yes</button><button id="no">No</button></div>
+      <div class="controls">
+        <button id="mic" aria-label="Tap to talk">🎙</button>
+        <div class="hint" id="hint">Tap to start talking and tap again when you are done. Take your time: it never stops on silence. Your words appear in the box below as you speak.</div>
+        <form class="typed" id="typed"><input id="typedIn" placeholder="Or type what you would say" autocomplete="off"><button class="primary" type="submit">Send</button></form>
+        <button class="ghost" id="byhand" type="button">Fill in the form by hand</button>
+        <div class="switches"><label><input type="checkbox" id="sw-speak" checked> Speak replies</label><label><input type="checkbox" id="sw-auto"> Send automatically when I stop</label><label><input type="checkbox" id="sw-hands"> Open the mic after each question</label></div>
+      </div>
+      <div class="timings" id="timings"></div>
+      <div class="err" id="err"></div>
+    </div>
+    <div class="card live">
+      <h2>Report so far</h2>
+      <div class="chips" id="chips"></div>
+      <dl id="liveDl"></dl>
+    </div>
+  </div>
+</section>
+
+<section id="v-review" hidden>
+  <div class="grid">
+    <div>
+      <div id="rows"></div>
+      <div class="actions">
+        <button class="primary" id="submit">Submit report</button>
+        <button class="ghost" id="more">Add details by voice</button>
+      </div>
+      <div class="err" id="err2"></div>
+    </div>
+    <div>
+      <div class="card"><h2>What you said</h2><div id="tx"></div></div>
+      <div class="card" style="margin-top:16px">
+        <h2>Correct by voice or text</h2>
+        <div class="actions" style="margin-top:0"><button class="ghost" id="mic2">🎙 Say a correction</button><span class="hint" id="hint2">"change severity to high" · "add Priya as a witness" · "it was room 3, not room 2"</span></div>
+        <form class="typed" id="typed2" style="margin-top:10px"><input id="typedIn2" placeholder="Type a correction" autocomplete="off"><button class="primary" type="submit">Apply</button></form>
+        <div id="editMsg" class="hint" style="margin-top:8px;text-align:left"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="v-done" hidden>
+  <div class="card done"><div class="tick">✓</div><h2 style="font-size:22px;text-transform:none;color:var(--ink)" id="doneTitle">Report saved</h2><p id="doneSummary"></p>
+  <button class="primary" id="newRep">New report</button></div>
+</section>
+
+<section id="v-history" hidden>
+  <div class="hist" id="hist"></div>
+  <div class="card" id="histDetail" hidden style="margin-top:16px"></div>
+</section>
+
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const META = [
+  {k:'incident_type', label:'Incident type', kind:'enum', req:true},
+  {k:'severity', label:'Severity', kind:'enum'},
+  {k:'location', label:'Location', kind:'text', req:true},
+  {k:'datetime', label:'Date & time', kind:'datetime', req:true},
+  {k:'description', label:'Description', kind:'area', req:true},
+  {k:'persons_involved', label:'People involved', kind:'list'},
+  {k:'equipment', label:'Equipment', kind:'list'},
+  {k:'witnesses', label:'Witnesses', kind:'list'},
+  {k:'immediate_actions', label:'Immediate actions', kind:'area'},
+  {k:'follow_up', label:'Follow-up', kind:'area'},
+];
+const S = {view:'record', draft:{}, flags:{}, full:'', ready:false, confirming:null, enums:{}, mic:false, focus:null, busy:false, rec:null, recFor:'turn', editing:null};
+const esc = t => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pretty = s => String(s).replace(/_/g,' ').replace(/^./, c => c.toUpperCase());
+function fmtTime(iso){ const d = new Date(iso); if (isNaN(d)) return iso; return d.toLocaleString([], {day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit'}); }
+function fmt(k, v){ if (v == null || v === '' || (Array.isArray(v) && !v.length)) return ''; if (k === 'datetime') return fmtTime(v); if (k === 'incident_type' || k === 'severity') return pretty(v); return Array.isArray(v) ? v.join(', ') : v; }
+
+async function api(path, body, blob){
+  const opt = blob ? {method:'POST', headers:{'Content-Type': blob.type || 'audio/webm'}, body: blob} : {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {})};
+  const r = await fetch(path, opt); const j = await r.json();
+  if (!r.ok) throw new Error(j.error || 'Something went wrong'); return j;
+}
+function setStatus(t){ $('#status').textContent = t; }
+function err(t, where){ (where || $('#err')).textContent = t || ''; }
+
+// ---------- speech out (stand-in for MeloTTS on the board) ----------
+function speak(text, done){
+  if (!$('#sw-speak').checked || !('speechSynthesis' in window) || !text) return done && done();
+  speechSynthesis.cancel(); setStatus('Speaking…'); $('#mic').disabled = true;
+  const u = new SpeechSynthesisUtterance(text); u.rate = 1.05;
+  let fin = false; const end = () => { if (fin) return; fin = true; $('#mic').disabled = !S.mic; setStatus('Ready'); done && done(); };
+  u.onend = end; u.onerror = end; setTimeout(end, 15000); speechSynthesis.speak(u);
+}
+
+// ---------- recording: tap to start, tap again to stop. No silence detection: people pause to think. ----------
+// While recording, the text appears in the box every ~2 s (Whisper re-reads the audio so far). When you stop, the final text stays in
+// the box so you can edit it, then Send. Tick "Send automatically" to skip that step.
+const BOX = {turn: () => $('#typedIn'), edit: () => $('#typedIn2')};
+async function startRec(target){
+  if (S.rec || !S.mic) return;
+  let stream; try { stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true}}); } catch(e){ err('Microphone blocked: ' + e.message); return; }
+  const mr = new MediaRecorder(stream), chunks = [], box = BOX[target]();
+  let inflight = false, stopped = false, seq = 0;
+  const mk = () => new Blob(chunks, {type: mr.mimeType || 'audio/webm'});
+  mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  box.value = ''; box.placeholder = 'Listening… speak, and tap the mic again when you are done';
+  const iv = setInterval(async () => {
+    if (inflight || stopped || !chunks.length) return; inflight = true; const mine = ++seq;
+    try { const r = await api('/api/partial', null, mk()); if (!stopped && mine === seq) box.value = r.text; } catch(e){}
+    inflight = false;
+  }, 2000);
+  const cap = setTimeout(() => S.rec && S.rec.stop(), 180000);          // safety cap: 3 minutes
+  mr.onstop = async () => {
+    stopped = true; clearInterval(iv); clearTimeout(cap); stream.getTracks().forEach(x => x.stop()); S.rec = null; setMicUI(false);
+    box.placeholder = target === 'turn' ? 'Or type what you would say' : 'Type a correction'; setStatus('Transcribing…');
+    try {
+      const r = await api('/api/transcribe', null, mk());
+      if (!r.text.trim()){ setStatus('Ready'); (target === 'turn' ? $('#hint') : $('#hint2')).textContent = 'I did not hear anything. Tap the mic and try again.'; return; }
+      box.value = r.text; S[target === 'turn' ? 'asrId' : 'asrId2'] = r.id;
+      if (target === 'turn' && $('#sw-auto').checked) return submitTyped();
+      setStatus('Check the text, edit if needed, then press Send' + (r.fluency_note ? ' (' + r.fluency_note + ')' : '')); box.focus();
+    } catch(e){ err(e.message, target === 'turn' ? $('#err') : $('#err2')); setStatus('Ready'); }
+  };
+  S.rec = {mr, stop: () => mr.stop(), target}; mr.start(1000); setMicUI(true); setStatus('Listening… tap the mic again when you are done');
+  speechSynthesis && speechSynthesis.cancel();
+}
+function setMicUI(on){
+  const t = S.rec && S.rec.target;
+  $('#mic').classList.toggle('rec', on && t === 'turn'); $('#mic').textContent = on && t === 'turn' ? '■' : '🎙';
+  $('#mic2').textContent = on && t === 'edit' ? '■ Stop' : '🎙 Say a correction';
+}
+function toggleRec(target){ if (S.rec) S.rec.stop(); else startRec(target); }
+async function submitTyped(){
+  const t = $('#typedIn').value.trim(); if (!t) return; const id = S.asrId; $('#typedIn').value = ''; S.asrId = null;
+  try { await sendTurn({text: t, asr_id: id}); } catch(x){ err(x.message); setStatus('Ready'); }
+}
+
+// ---------- conversation ----------
+function say(cls, t){ const d = document.createElement('div'); d.className = 'b ' + cls; d.textContent = t; $('#log').appendChild(d); $('#log').scrollTop = 1e9; }
+function absorb(r){ S.pending = r.pending || []; S.draft = r.draft || {}; S.flags = r.flags || {}; S.full = r.full_text || ''; renderLive(); }
+async function sendTurn({text, blob, asr_id}){
+  S.busy = true; err(''); setStatus(blob ? 'Transcribing…' : 'Thinking…');
+  const r = await api('/api/turn', {text, asr_id}, blob); S.busy = false; absorb(r);
+  if (r.transcript) say('me', r.transcript);
+  const nz = x => String(x || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+  if (r.raw && nz(r.raw) !== nz(r.transcript)) say('note', 'Whisper heard: “' + r.raw + '” → cleaned by ' + (r.clean_how === 'llm' ? 'AI' : 'rules') + ' before understanding');
+  S.ready = r.ready; S.confirming = r.confirming; $('#confirm').hidden = !r.confirming;
+  const t = r.timings; $('#timings').textContent = t ? `speech→text ${t.asr}s · understanding ${t.extract}s · total ${t.total}s` : '';
+  if (r.ready || r.state === 'REVIEW'){
+    say(r.ready ? 'note' : 'bot', r.ready ? 'All required details captured.' : r.message); show('review'); setStatus('Review');
+    $('#editMsg').textContent = r.ready ? '' : r.message; renderReview(); return;
+  }
+  say('bot', r.message); setStatus(r.state === 'CONFIRMING' ? 'Confirming' : 'Asking');
+  speak(r.message, () => { if ($('#sw-hands').checked && S.mic && S.view === 'record' && !r.needs_repeat) startRec('turn'); });
+}
+async function sendEdit({text, blob}){ S.asrId2 = null;
+  const r = await api('/api/voice_edit', {text}, blob); absorb(r); setStatus('Review');
+  if (r.intent === 'submit') return doSubmit();
+  $('#editMsg').textContent = (r.heard ? `Heard: “${r.heard}” — ` : '') + (r.message || ''); renderReview();
+}
+
+// ---------- screens ----------
+function show(v){
+  S.view = v; for (const x of ['record','review','done','history']) $('#v-' + x).hidden = x !== v;
+  $('#n-record').classList.toggle('cur', v !== 'history'); $('#n-history').classList.toggle('cur', v === 'history');
+  if (v === 'history') loadHistory();
+}
+function renderLive(){
+  const miss = ['incident_type','location','datetime','description'];
+  const pend = Object.fromEntries((S.pending || []).map(p => [p.field, p.value]));
+  $('#chips').innerHTML = miss.map(k => `<span class="chip ${S.draft[k] ? 'ok' : ''}">${S.draft[k] ? '✓' : (k in pend ? '…' : '○')} ${pretty(k === 'datetime' ? 'time' : k)}</span>`).join('');
+  $('#liveDl').innerHTML = META.filter(m => fmt(m.k, S.draft[m.k]) || (m.k in pend)).map(m => (m.k in pend && !S.draft[m.k])
+    ? `<dt>${m.label}</dt><dd style="opacity:.7">${esc(fmt(m.k, pend[m.k]))} <i>(please confirm)</i></dd>`
+    : `<dt>${m.label}</dt><dd>${esc(fmt(m.k, S.draft[m.k]))}</dd>`).join('');
+}
+function flagOf(k){ return S.flags[k] || null; }
+function renderTx(){
+  const spans = S.focus && flagOf(S.focus) ? (flagOf(S.focus).spans || []).slice().sort((a,b) => a[0]-b[0]) : [];
+  let out = '', i = 0; for (const [a,b] of spans){ if (a < i) continue; out += esc(S.full.slice(i, a)) + '<mark>' + esc(S.full.slice(a, b)) + '</mark>'; i = b; }
+  $('#tx').innerHTML = out + esc(S.full.slice(i)) || '—';
+}
+function renderReview(){
+  $('#rows').innerHTML = META.map(m => {
+    const v = S.draft[m.k], empty = !fmt(m.k, v), f = flagOf(m.k), st = f && f.status;
+    let cls = 'row', badge = '';
+    if (empty && m.req){ cls += ' grey'; badge = '<span class="badge req">Required</span>'; }
+    else if (st === 'unverified'){ cls += ' bad'; badge = '<span class="badge bad">Not heard clearly</span>'; }
+    else if (st === 'derived'){ badge = '<span class="badge warn">Worked out · check</span>'; }
+    else if (st === 'check'){ badge = '<span class="badge warn">Please check</span>'; }
+    if (S.focus === m.k) cls += ' foc';
+    const body = S.editing === m.k ? editor(m, v) : `<div class="val">${empty ? '<span style="color:var(--mut)">—</span>' : esc(fmt(m.k, v))}</div>${f && f.note ? `<small>${esc(f.note)}</small>` : ''}`;
+    return `<div class="${cls}" data-k="${m.k}"><div class="lab">${m.label}</div><div>${body}</div><div>${badge}</div></div>`;
+  }).join('');
+  const ok = META.filter(m => m.req).every(m => fmt(m.k, S.draft[m.k]));
+  $('#submit').disabled = !ok; $('#submit').title = ok ? '' : 'Fill the required fields first';
+  renderTx();
+}
+function editor(m, v){
+  if (m.kind === 'enum') return `<select data-edit="${m.k}"><option value="">—</option>${(S.enums[m.k]||[]).map(o => `<option value="${o}" ${o === v ? 'selected' : ''}>${pretty(o)}</option>`).join('')}</select>`;
+  if (m.kind === 'datetime') return `<input type="datetime-local" data-edit="${m.k}" value="${v || ''}">`;
+  if (m.kind === 'area') return `<textarea rows="2" data-edit="${m.k}">${esc(v || '')}</textarea>`;
+  if (m.kind === 'list') return `<input data-edit="${m.k}" value="${esc((v || []).join(', '))}" placeholder="comma separated">`;
+  return `<input data-edit="${m.k}" value="${esc(v || '')}">`;
+}
+async function commitEdit(k, val){
+  const m = META.find(x => x.k === k); S.editing = null;
+  const value = m.kind === 'list' ? val.split(',').map(s => s.trim()).filter(Boolean) : val;
+  try { const r = await api('/api/edit', {field:k, value}); absorb(r); if (r.notice) $('#editMsg').textContent = r.notice + ' Please give a time in the past.'; } catch(e){ err(e.message, $('#err2')); }
+  renderReview();
+}
+$('#rows').addEventListener('click', e => {
+  if (e.target.closest('[data-edit]')) return;
+  const row = e.target.closest('.row'); if (!row) return; const k = row.dataset.k;
+  if (S.focus === k && S.editing !== k){ S.editing = k; } else { S.focus = k; S.editing = null; }
+  renderReview(); const el = document.querySelector('[data-edit]'); if (el) el.focus();
+});
+$('#rows').addEventListener('change', e => { const k = e.target.dataset.edit; if (k) commitEdit(k, e.target.value); });
+$('#rows').addEventListener('focusout', e => { const k = e.target.dataset && e.target.dataset.edit; if (k && e.target.tagName !== 'SELECT') commitEdit(k, e.target.value); });
+
+async function doSubmit(){
+  try { const r = await api('/api/submit', {}); $('#doneSummary').textContent = r.summary; show('done'); speak(r.summary); } catch(e){ err(e.message, $('#err2')); }
+}
+async function newReport(){
+  await api('/api/new', {}); S.draft = {}; S.flags = {}; S.full = ''; S.focus = null; S.editing = null; S.ready = false; S.confirming = null;
+  $('#log').innerHTML = ''; $('#confirm').hidden = true; $('#timings').textContent = ''; $('#editMsg').textContent = ''; err('');
+  say('bot', 'Describe the incident. What happened, where and when?'); renderLive(); show('record'); setStatus('Ready');
+}
+async function loadHistory(){
+  const rows = await (await fetch('/api/history')).json(); $('#histDetail').hidden = true;
+  $('#hist').innerHTML = rows.length ? rows.map(r => `<div class="item" data-id="${r.id}"><b>${pretty(r.fields.incident_type || 'incident')}</b> · ${esc(r.fields.location || '')}<br><small>${fmtTime(r.created_at)} · severity ${esc(r.fields.severity || '—')}</small></div>`).join('') : '<div class="card">No reports yet.</div>';
+  $('#hist').onclick = e => { const it = e.target.closest('.item'); if (!it) return; const r = rows.find(x => x.id == it.dataset.id);
+    $('#histDetail').hidden = false; $('#histDetail').innerHTML = '<h2>Saved report (read-only)</h2><dl style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px">' + META.filter(m => fmt(m.k, r.fields[m.k])).map(m => `<dt style="color:var(--mut)">${m.label}</dt><dd style="margin:0">${esc(fmt(m.k, r.fields[m.k]))}</dd>`).join('') + '</dl><p class="hint" style="text-align:left">' + esc(r.transcript) + '</p>'; };
+}
+
+// ---------- wiring ----------
+$('#mic').onclick = () => toggleRec('turn');
+$('#mic2').onclick = () => toggleRec('edit');
+$('#typed').onsubmit = e => { e.preventDefault(); submitTyped(); };
+$('#typed2').onsubmit = async e => { e.preventDefault(); const t = $('#typedIn2').value.trim(); if (!t) return; $('#typedIn2').value = ''; try { await sendEdit({text:t}); } catch(x){ err(x.message, $('#err2')); } };
+$('#yes').onclick = () => sendTurn({text:'yes'}).catch(x => err(x.message));
+$('#no').onclick = () => sendTurn({text:'no'}).catch(x => err(x.message));
+$('#submit').onclick = doSubmit;
+$('#byhand').onclick = () => { show('review'); setStatus('Review'); renderReview(); };
+$('#more').onclick = () => { show('record'); say('bot', 'Go ahead, add more details.'); setStatus('Ready'); };
+$('#newRep').onclick = newReport;
+$('#n-record').onclick = () => show(S.ready && S.view !== 'done' ? 'review' : (S.view === 'done' ? 'done' : 'record'));
+$('#n-history').onclick = () => show('history');
+function net(){ const el = $('#offline'); el.textContent = navigator.onLine ? '● On-device · no cloud calls' : '● Offline · airplane mode OK'; }
+addEventListener('online', net); addEventListener('offline', net); net();
+
+(async () => {
+  const st = await (await fetch('/api/status')).json(); S.enums = st.enums; S.mic = st.mic && !!navigator.mediaDevices;
+  $('#mic').disabled = !S.mic; if (!S.mic){ $('#mic2').disabled = true; $('#hint').textContent = 'Voice needs the server started with --asr whisper. You can type below.'; $('#sw-hands').parentElement.hidden = true; }
+  $('#hint').title = `speech: ${st.asr} · understanding: ${st.llm}`;
+  await newReport();
+})();
+</script>
+</body>
+</html>

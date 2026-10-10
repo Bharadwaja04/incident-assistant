@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+# local data: recorded reports and the database contain incident text
+incidents.db
+reports/
+# temporary / old copies
+_backup_before_plan_alignment/
+*.tgz
+*.webm

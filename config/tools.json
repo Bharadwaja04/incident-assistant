@@ -1,0 +1,243 @@
+[
+ {
+  "type": "function",
+  "function": {
+   "name": "create_incident_report",
+   "description": "Call when ALL mandatory fields (incident_type, location, datetime, description) are known.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "incident_type": {
+      "type": "string",
+      "enum": [
+       "water_leak",
+       "fire",
+       "electrical",
+       "injury",
+       "security",
+       "equipment_failure",
+       "chemical_spill",
+       "near_miss",
+       "it_outage",
+       "other"
+      ],
+      "description": "What happened (not who was called)"
+     },
+     "severity": {
+      "type": "string",
+      "enum": [
+       "low",
+       "medium",
+       "high",
+       "critical"
+      ],
+      "description": "Say what was stated; otherwise derive from the severity rubric"
+     },
+     "location": {
+      "type": "string",
+      "description": "Where it happened. Use the exact room name when one of the known rooms is mentioned"
+     },
+     "datetime": {
+      "type": "string",
+      "description": "When it happened, ISO 8601 e.g. 2026-10-10T10:00"
+     },
+     "persons_involved": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "People hurt or involved (names or short descriptions)"
+     },
+     "equipment": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Equipment involved"
+     },
+     "description": {
+      "type": "string",
+      "description": "One-sentence summary of what happened"
+     },
+     "immediate_actions": {
+      "type": "string",
+      "description": "What has already been done"
+     },
+     "witnesses": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "People who saw it"
+     },
+     "follow_up": {
+      "type": "string",
+      "description": "Recommended follow-up (a suggestion, not something said)"
+     }
+    },
+    "required": [
+     "incident_type",
+     "location",
+     "datetime",
+     "description"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "request_missing_info",
+   "description": "Call when a mandatory field is missing or unclear. Put what you heard so far in partial_report.",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "partial_report": {
+      "type": "object",
+      "properties": {
+       "incident_type": {
+        "type": "string",
+        "enum": [
+         "water_leak",
+         "fire",
+         "electrical",
+         "injury",
+         "security",
+         "equipment_failure",
+         "chemical_spill",
+         "near_miss",
+         "it_outage",
+         "other"
+        ],
+        "description": "What happened (not who was called)"
+       },
+       "severity": {
+        "type": "string",
+        "enum": [
+         "low",
+         "medium",
+         "high",
+         "critical"
+        ],
+        "description": "Say what was stated; otherwise derive from the severity rubric"
+       },
+       "location": {
+        "type": "string",
+        "description": "Where it happened. Use the exact room name when one of the known rooms is mentioned"
+       },
+       "datetime": {
+        "type": "string",
+        "description": "When it happened, ISO 8601 e.g. 2026-10-10T10:00"
+       },
+       "persons_involved": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "People hurt or involved (names or short descriptions)"
+       },
+       "equipment": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "Equipment involved"
+       },
+       "description": {
+        "type": "string",
+        "description": "One-sentence summary of what happened"
+       },
+       "immediate_actions": {
+        "type": "string",
+        "description": "What has already been done"
+       },
+       "witnesses": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        },
+        "description": "People who saw it"
+       },
+       "follow_up": {
+        "type": "string",
+        "description": "Recommended follow-up (a suggestion, not something said)"
+       }
+      }
+     },
+     "missing_fields": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "enum": [
+        "incident_type",
+        "location",
+        "datetime",
+        "description"
+       ]
+      }
+     },
+     "question": {
+      "type": "string",
+      "description": "One short question for the person"
+     }
+    },
+    "required": [
+     "partial_report",
+     "missing_fields",
+     "question"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "update_report_field",
+   "description": "Call when the person corrects something while reviewing (e.g. 'make it high severity').",
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "field": {
+      "type": "string",
+      "enum": [
+       "incident_type",
+       "severity",
+       "location",
+       "datetime",
+       "persons_involved",
+       "equipment",
+       "description",
+       "immediate_actions",
+       "witnesses",
+       "follow_up"
+      ]
+     },
+     "value": {
+      "type": [
+       "string",
+       "array"
+      ],
+      "items": {
+       "type": "string"
+      }
+     }
+    },
+    "required": [
+     "field",
+     "value"
+    ]
+   }
+  }
+ },
+ {
+  "type": "function",
+  "function": {
+   "name": "submit_report",
+   "description": "Call when the person confirms the report is correct.",
+   "parameters": {
+    "type": "object",
+    "properties": {}
+   }
+  }
+ }
+]

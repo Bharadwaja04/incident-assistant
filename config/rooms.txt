@@ -1,0 +1,15 @@
+# The site's rooms (gazetteer). One per line. Used to repair ASR slips ("conference room too" -> "Conference Room 2")
+# and to snap locations to exact names. Replace with the real venue's rooms.
+Conference Room 1
+Conference Room 2
+Conference Room 3
+Conference Room 4
+Cafeteria
+Lobby
+Server Room
+Electrical Room
+Lab 101
+Lab 102
+Lab 103
+Lab 104
+Parking B1

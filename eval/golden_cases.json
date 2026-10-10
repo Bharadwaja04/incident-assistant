@@ -1,0 +1,904 @@
+{
+ "now": "2026-10-10T21:00",
+ "parse_time": [
+  {
+   "in": "at 10 AM",
+   "out": "2026-10-10T10:00"
+  },
+  {
+   "in": "around 2:30 PM",
+   "out": "2026-10-10T14:30"
+  },
+  {
+   "in": "at 11.45 am",
+   "out": "2026-10-10T11:45"
+  },
+  {
+   "in": "8:30 in the evening",
+   "out": "2026-10-10T20:30"
+  },
+  {
+   "in": "at 4pm yesterday",
+   "out": "2026-10-09T16:00"
+  },
+  {
+   "in": "this morning at 9",
+   "out": "2026-10-10T09:00"
+  },
+  {
+   "in": "at 16, 6, 15 PM",
+   "out": null
+  },
+  {
+   "in": "at 650 pm",
+   "out": "2026-10-10T18:50"
+  },
+  {
+   "in": "3 AM",
+   "out": "2026-10-10T03:00"
+  },
+  {
+   "in": "12 PM",
+   "out": "2026-10-10T12:00"
+  },
+  {
+   "in": "12 AM",
+   "out": "2026-10-10T00:00"
+  },
+  {
+   "in": "at 9",
+   "out": "2026-10-10T09:00"
+  },
+  {
+   "in": "no time here",
+   "out": null
+  },
+  {
+   "in": "14:05",
+   "out": "2026-10-10T14:05"
+  },
+  {
+   "in": "20 minutes ago",
+   "out": "2026-10-10T20:40"
+  },
+  {
+   "in": "about twenty minutes ago",
+   "out": "2026-10-10T20:40"
+  },
+  {
+   "in": "half an hour ago",
+   "out": "2026-10-10T20:30"
+  },
+  {
+   "in": "an hour ago",
+   "out": "2026-10-10T20:00"
+  },
+  {
+   "in": "2 hours ago",
+   "out": "2026-10-10T19:00"
+  },
+  {
+   "in": "a couple of hours ago",
+   "out": "2026-10-10T19:00"
+  },
+  {
+   "in": "an hour and a half ago",
+   "out": "2026-10-10T19:30"
+  },
+  {
+   "in": "forty five minutes ago",
+   "out": "2026-10-10T20:15"
+  }
+ ],
+ "parse_time_bare_ok": [
+  {
+   "in": "10",
+   "out": "2026-10-10T10:00"
+  },
+  {
+   "in": "7 AM",
+   "out": "2026-10-10T07:00"
+  },
+  {
+   "in": "it was around 6",
+   "out": "2026-10-10T06:00"
+  },
+  {
+   "in": "second floor",
+   "out": null
+  }
+ ],
+ "clean_transcript": [
+  {
+   "in": "Uh, small fire in the in the kitchen at 6:15 6:15 PM",
+   "out": "small fire in the kitchen at 6:15 PM"
+  },
+  {
+   "in": "hmm uh",
+   "out": ""
+  },
+  {
+   "in": "the the fire",
+   "out": "the fire"
+  },
+  {
+   "in": "Fire at the lab, umm, around 2 pm",
+   "out": "Fire at the lab, around 2 pm"
+  },
+  {
+   "in": "ok ok ok so there was a leak",
+   "out": "ok so there was a leak"
+  },
+  {
+   "in": "Uh, small fire in the in the kitchen at 6:15 6:15 PM",
+   "out": "small fire in the kitchen at 6:15 PM"
+  },
+  {
+   "in": "hmm uh",
+   "out": ""
+  },
+  {
+   "in": "the the fire",
+   "out": "the fire"
+  },
+  {
+   "in": "Fire at the lab, umm, around 2 pm",
+   "out": "Fire at the lab, around 2 pm"
+  },
+  {
+   "in": "There was a s-s-small fire in the kitchen",
+   "out": "There was a small fire in the kitchen"
+  },
+  {
+   "in": "The pipe b-b-burst near the lab",
+   "out": "The pipe burst near the lab"
+  },
+  {
+   "in": "there was a s s small fire",
+   "out": "there was a small fire"
+  },
+  {
+   "in": "there was a fiiiire in the sssserver room",
+   "out": "there was a fire in the server room"
+  },
+  {
+   "in": "Water leak, you know, near the cafeteria, like, around 10 AM",
+   "out": "Water leak, near the cafeteria, around 10 AM"
+  },
+  {
+   "in": "it happened at 6, no sorry, 6:15 PM",
+   "out": "it happened at 6:15 PM"
+  },
+  {
+   "in": "it happened at 6 PM, wait, 7:30 PM",
+   "out": "it happened at 7:30 PM"
+  },
+  {
+   "in": "the, the, the lift is stuck",
+   "out": "the lift is stuck"
+  },
+  {
+   "in": "he he hurt his leg badly",
+   "out": "he hurt his leg badly"
+  },
+  {
+   "in": "a leak in block B broke the pipe",
+   "out": "a leak in block B broke the pipe"
+  },
+  {
+   "in": "water in the the theft room",
+   "out": "water in the theft room"
+  },
+  {
+   "in": "no one was hurt, nothing serious",
+   "out": "no one was hurt, nothing serious"
+  },
+  {
+   "in": "it was at 6, no 7 people were hurt",
+   "out": "it was at 6, no 7 people were hurt"
+  },
+  {
+   "in": "he said well-known e-mail was down",
+   "out": "he said well-known e-mail was down"
+  },
+  {
+   "in": "it was in Conference Room 2, no, room 3",
+   "out": "it was in Conference Room 2, no, room 3"
+  },
+  {
+   "in": "the theft happened in the office",
+   "out": "the theft happened in the office"
+  }
+ ],
+ "severity_from_text": [
+  {
+   "in": "nothing serious",
+   "out": "low"
+  },
+  {
+   "in": "it was minor",
+   "out": "low"
+  },
+  {
+   "in": "badly hurt",
+   "out": "high"
+  },
+  {
+   "in": "critical",
+   "out": "critical"
+  },
+  {
+   "in": "no severity here",
+   "out": null
+  },
+  {
+   "in": "small fire",
+   "out": "low"
+  },
+  {
+   "in": "an ambulance was called",
+   "out": "high"
+  }
+ ],
+ "severity_floor": [
+  {
+   "fields": {
+    "incident_type": "fire"
+   },
+   "text": "fire in the kitchen",
+   "out": "high"
+  },
+  {
+   "fields": {
+    "incident_type": "injury"
+   },
+   "text": "he hurt his leg",
+   "out": "high"
+  },
+  {
+   "fields": {
+    "incident_type": "injury"
+   },
+   "text": "nobody was hurt",
+   "out": null
+  },
+  {
+   "fields": {
+    "incident_type": "water_leak"
+   },
+   "text": "smoke and a leak",
+   "out": "high"
+  },
+  {
+   "fields": {
+    "incident_type": "water_leak"
+   },
+   "text": "pipe leak",
+   "out": null
+  },
+  {
+   "fields": {
+    "incident_type": "other"
+   },
+   "text": "gas smell in the lab",
+   "out": "high"
+  }
+ ],
+ "derive_severity": [
+  {
+   "fields": {
+    "incident_type": "water_leak"
+   },
+   "text": "pipe leak",
+   "proposed": null,
+   "out": "medium"
+  },
+  {
+   "fields": {
+    "incident_type": "near_miss"
+   },
+   "text": "a box almost fell",
+   "proposed": null,
+   "out": "low"
+  },
+  {
+   "fields": {
+    "incident_type": "injury"
+   },
+   "text": "slipped",
+   "proposed": "low",
+   "out": "high"
+  },
+  {
+   "fields": {
+    "incident_type": "equipment_failure"
+   },
+   "text": "printer broke",
+   "proposed": "medium",
+   "out": "medium"
+  }
+ ],
+ "normalise": [
+  {
+   "in": {
+    "severity": "major"
+   },
+   "out": {
+    "severity": "high"
+   }
+  },
+  {
+   "in": {
+    "incident_type": "Water Leak"
+   },
+   "out": {
+    "incident_type": "water_leak"
+   }
+  },
+  {
+   "in": {
+    "incident_type": "spill"
+   },
+   "out": {
+    "incident_type": "chemical_spill"
+   }
+  },
+  {
+   "in": {
+    "incident_type": "banana"
+   },
+   "out": {
+    "incident_type": "other"
+   }
+  },
+  {
+   "in": {
+    "severity": "banana"
+   },
+   "out": {}
+  },
+  {
+   "in": {
+    "occurred_at": "10 AM"
+   },
+   "out": {
+    "datetime": "2026-10-10T10:00"
+   }
+  },
+  {
+   "in": {
+    "datetime": "2026-10-10T10:00:00"
+   },
+   "out": {
+    "datetime": "2026-10-10T10:00"
+   }
+  },
+  {
+   "in": {
+    "witnesses": "Priya and Ravi"
+   },
+   "out": {
+    "witnesses": [
+     "Priya",
+     "Ravi"
+    ]
+   }
+  },
+  {
+   "in": {
+    "people_involved": [
+     "A",
+     "a",
+     " B "
+    ]
+   },
+   "out": {
+    "persons_involved": [
+     "A",
+     "B"
+    ]
+   }
+  },
+  {
+   "in": {
+    "location": "kitchen, second floor",
+    "description": null
+   },
+   "out": {
+    "location": "kitchen second floor"
+   }
+  },
+  {
+   "in": {
+    "action_taken": "called security",
+    "foo": "x"
+   },
+   "out": {
+    "immediate_actions": "called security"
+   }
+  }
+ ],
+ "ground": [
+  {
+   "fields": {
+    "incident_type": "fire",
+    "location": "a pipe",
+    "severity": "critical"
+   },
+   "text": "A pipe burst. Fire department called, minor.",
+   "out": {
+    "severity": "low"
+   }
+  },
+  {
+   "fields": {
+    "location": "kitchen",
+    "datetime": "2026-10-10T18:00"
+   },
+   "text": "smoke in the kitchen",
+   "out": {
+    "location": "kitchen"
+   }
+  },
+  {
+   "fields": {
+    "witnesses": [
+     "Ravi",
+     "Zed"
+    ]
+   },
+   "text": "Ravi saw it",
+   "out": {
+    "witnesses": [
+     "Ravi"
+    ]
+   }
+  },
+  {
+   "fields": {
+    "equipment": [
+     "projector"
+    ]
+   },
+   "text": "the lift is stuck",
+   "out": {}
+  }
+ ],
+ "fix_rooms": [
+  {
+   "in": "water leak near conference room too around 10 AM",
+   "out": "water leak near Conference Room 2 around 10 AM"
+  },
+  {
+   "in": "fire in lab one oh two at 3 pm",
+   "out": "fire in Lab 102 at 3 pm"
+  },
+  {
+   "in": "send them to lab to see",
+   "out": "send them to lab to see"
+  },
+  {
+   "in": "smoke in the caffeteria",
+   "out": "smoke in the Cafeteria"
+  },
+  {
+   "in": "gas in the server rum",
+   "out": "gas in the Server Room"
+  },
+  {
+   "in": "cars in parking b one",
+   "out": "cars in Parking B1"
+  },
+  {
+   "in": "He went to conference room for.",
+   "out": "He went to Conference Room 4."
+  }
+ ],
+ "snap_location": [
+  {
+   "in": "conference room 2",
+   "out": "Conference Room 2"
+  },
+  {
+   "in": "Conferance Room 2",
+   "out": "Conference Room 2"
+  },
+  {
+   "in": "pantry",
+   "out": "pantry"
+  },
+  {
+   "in": "lobby",
+   "out": "Lobby"
+  }
+ ],
+ "evidence": [
+  {
+   "fields": {
+    "location": "Cafeteria",
+    "witnesses": [
+     "Ravi"
+    ]
+   },
+   "text": "Someone slipped near the Cafeteria. Ravi saw it.",
+   "out": {
+    "location": {
+     "status": "ok",
+     "spans": [
+      [
+       25,
+       34
+      ]
+     ]
+    },
+    "witnesses": {
+     "status": "ok",
+     "spans": [
+      [
+       36,
+       40
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "fields": {
+    "witnesses": [
+     "Dev"
+    ]
+   },
+   "text": "Ravi saw it",
+   "out": {
+    "witnesses": {
+     "status": "unverified",
+     "spans": []
+    }
+   }
+  }
+ ],
+ "flows": [
+  {
+   "turns": [
+    {
+     "say": "Someone slipped near the cafeteria and hurt their ankle.",
+     "state": "ASKING",
+     "message": "When did it happen? Approximate is fine.",
+     "ready": false,
+     "draft": {
+      "incident_type": "injury",
+      "location": "Cafeteria",
+      "description": "Someone slipped near the Cafeteria and hurt their ankle.",
+      "severity": "high"
+     }
+    },
+    {
+     "say": "About twenty minutes ago. It was Priya from accounts, and Ravi saw it.",
+     "state": "REVIEW",
+     "message": "Please review:",
+     "ready": true,
+     "draft": {
+      "incident_type": "injury",
+      "location": "Cafeteria",
+      "description": "Someone slipped near the Cafeteria and hurt their ankle.",
+      "severity": "high",
+      "datetime": "2026-10-10T20:40",
+      "persons_involved": [
+       "Priya"
+      ],
+      "witnesses": [
+       "Ravi"
+      ]
+     }
+    }
+   ],
+   "final_flags": {
+    "location": "ok",
+    "persons_involved": "ok",
+    "witnesses": "ok",
+    "severity": "derived"
+   }
+  },
+  {
+   "turns": [
+    {
+     "say": "A pipe burst",
+     "state": "ASKING",
+     "message": "When and where did this happen?",
+     "ready": false,
+     "draft": {
+      "incident_type": "water_leak",
+      "equipment": [
+       "pipe"
+      ],
+      "description": "A pipe burst",
+      "severity": "medium"
+     }
+    },
+    {
+     "say": "second floor washroom",
+     "state": "ASKING",
+     "message": "When did it happen? Approximate is fine.",
+     "ready": false,
+     "draft": {
+      "incident_type": "water_leak",
+      "equipment": [
+       "pipe"
+      ],
+      "description": "A pipe burst",
+      "severity": "medium",
+      "location": "second floor washroom"
+     }
+    },
+    {
+     "say": "7 AM",
+     "state": "REVIEW",
+     "message": "Please review:",
+     "ready": true,
+     "draft": {
+      "incident_type": "water_leak",
+      "equipment": [
+       "pipe"
+      ],
+      "description": "A pipe burst",
+      "severity": "medium",
+      "location": "second floor washroom",
+      "datetime": "2026-10-10T07:00"
+     }
+    }
+   ],
+   "final_flags": {
+    "location": "ok",
+    "equipment": "ok",
+    "severity": "derived"
+   }
+  },
+  {
+   "turns": [
+    {
+     "say": "There was a water leak near conference room too around 10 AM. Maintenance has already isolated the area.",
+     "state": "REVIEW",
+     "message": "Please review:",
+     "ready": true,
+     "draft": {
+      "incident_type": "water_leak",
+      "location": "Conference Room 2",
+      "datetime": "2026-10-10T10:00",
+      "immediate_actions": "Maintenance has already isolated the area",
+      "description": "There was a water leak near Conference Room 2 around 10 AM. Maintenance has already isolated the area.",
+      "severity": "medium"
+     }
+    }
+   ],
+   "final_flags": {
+    "location": "ok",
+    "immediate_actions": "ok",
+    "severity": "derived"
+   }
+  },
+  {
+   "turns": [
+    {
+     "say": "Fire in the kitchen at 11 PM",
+     "state": "ASKING",
+     "message": "That time is in the future. When did it happen? Approximate is fine.",
+     "ready": false,
+     "draft": {
+      "incident_type": "fire",
+      "location": "kitchen",
+      "description": "Fire in the kitchen at 11 PM",
+      "severity": "high"
+     }
+    },
+    {
+     "say": "6 PM",
+     "state": "REVIEW",
+     "message": "Please review:",
+     "ready": true,
+     "draft": {
+      "incident_type": "fire",
+      "location": "kitchen",
+      "description": "Fire in the kitchen at 11 PM",
+      "severity": "high",
+      "datetime": "2026-10-10T18:00"
+     }
+    }
+   ],
+   "final_flags": {
+    "location": "ok",
+    "severity": "derived"
+   }
+  },
+  {
+   "turns": [
+    {
+     "say": "Small fire in the kitchen at 3 PM, minor.",
+     "state": "REVIEW",
+     "message": "Please review:",
+     "ready": true,
+     "draft": {
+      "incident_type": "fire",
+      "location": "kitchen",
+      "datetime": "2026-10-10T15:00",
+      "severity": "low",
+      "description": "Small fire in the kitchen at 3 PM, minor."
+     }
+    }
+   ],
+   "final_flags": {
+    "location": "ok",
+    "severity": "check"
+   }
+  },
+  {
+   "turns": [
+    {
+     "say": "hmm uh",
+     "state": "ASKING",
+     "message": "Sorry, I didn't catch that. Please say it again.",
+     "ready": false,
+     "draft": {}
+    },
+    {
+     "say": "Printer not working in finance department",
+     "state": "ASKING",
+     "message": "When did it happen? Approximate is fine.",
+     "ready": false,
+     "draft": {
+      "incident_type": "equipment_failure",
+      "location": "finance department",
+      "equipment": [
+       "printer"
+      ],
+      "description": "Printer not working in finance department",
+      "severity": "low"
+     }
+    },
+    {
+     "say": "10 in the morning",
+     "state": "REVIEW",
+     "message": "Please review:",
+     "ready": true,
+     "draft": {
+      "incident_type": "equipment_failure",
+      "location": "finance department",
+      "equipment": [
+       "printer"
+      ],
+      "description": "Printer not working in finance department",
+      "severity": "low",
+      "datetime": "2026-10-10T10:00"
+     }
+    }
+   ],
+   "final_flags": {
+    "location": "ok",
+    "equipment": "ok",
+    "severity": "derived"
+   }
+  }
+ ],
+ "voice_edits": [
+  {
+   "first": "Water leak near conference room 2 around 10 AM, maintenance isolated the area.",
+   "edits": [
+    {
+     "say": "change severity to high",
+     "ok": true,
+     "intent": null,
+     "message": "Done. Severity is now high.",
+     "draft": {
+      "incident_type": "water_leak",
+      "location": "Conference Room 2",
+      "datetime": "2026-10-10T10:00",
+      "immediate_actions": "maintenance isolated the area",
+      "description": "Water leak near Conference Room 2 around 10 AM, maintenance isolated the area.",
+      "severity": "high"
+     }
+    },
+    {
+     "say": "add Priya as a witness",
+     "ok": true,
+     "intent": null,
+     "message": "Added Priya.",
+     "draft": {
+      "incident_type": "water_leak",
+      "location": "Conference Room 2",
+      "datetime": "2026-10-10T10:00",
+      "immediate_actions": "maintenance isolated the area",
+      "description": "Water leak near Conference Room 2 around 10 AM, maintenance isolated the area.",
+      "severity": "high",
+      "witnesses": [
+       "Priya"
+      ]
+     }
+    },
+    {
+     "say": "it was room 3, not room 2",
+     "ok": true,
+     "intent": null,
+     "message": "Done. Location is now Conference Room 3.",
+     "draft": {
+      "incident_type": "water_leak",
+      "location": "Conference Room 3",
+      "datetime": "2026-10-10T10:00",
+      "immediate_actions": "maintenance isolated the area",
+      "description": "Water leak near Conference room 3 around 10 AM, maintenance isolated the area.",
+      "severity": "high",
+      "witnesses": [
+       "Priya"
+      ]
+     }
+    },
+    {
+     "say": "add that the floor was wet",
+     "ok": true,
+     "intent": null,
+     "message": "Added to the description.",
+     "draft": {
+      "incident_type": "water_leak",
+      "location": "Conference Room 3",
+      "datetime": "2026-10-10T10:00",
+      "immediate_actions": "maintenance isolated the area",
+      "description": "Water leak near Conference room 3 around 10 AM, maintenance isolated the area. The floor was wet.",
+      "severity": "high",
+      "witnesses": [
+       "Priya"
+      ]
+     }
+    },
+    {
+     "say": "change the time to 9 AM",
+     "ok": true,
+     "intent": null,
+     "message": "Done. Time is now 9:00 AM.",
+     "draft": {
+      "incident_type": "water_leak",
+      "location": "Conference Room 3",
+      "datetime": "2026-10-10T09:00",
+      "immediate_actions": "maintenance isolated the area",
+      "description": "Water leak near Conference room 3 around 10 AM, maintenance isolated the area. The floor was wet.",
+      "severity": "high",
+      "witnesses": [
+       "Priya"
+      ]
+     }
+    },
+    {
+     "say": "submit",
+     "ok": true,
+     "intent": "submit",
+     "message": "",
+     "draft": {
+      "incident_type": "water_leak",
+      "location": "Conference Room 3",
+      "datetime": "2026-10-10T09:00",
+      "immediate_actions": "maintenance isolated the area",
+      "description": "Water leak near Conference room 3 around 10 AM, maintenance isolated the area. The floor was wet.",
+      "severity": "high",
+      "witnesses": [
+       "Priya"
+      ]
+     }
+    },
+    {
+     "say": "blah blah",
+     "ok": false,
+     "intent": null,
+     "message": "Sorry, I didn't understand that change. Tap a field to edit it.",
+     "draft": {
+      "incident_type": "water_leak",
+      "location": "Conference Room 3",
+      "datetime": "2026-10-10T09:00",
+      "immediate_actions": "maintenance isolated the area",
+      "description": "Water leak near Conference room 3 around 10 AM, maintenance isolated the area. The floor was wet.",
+      "severity": "high",
+      "witnesses": [
+       "Priya"
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}
