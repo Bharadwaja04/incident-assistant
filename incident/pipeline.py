@@ -15,6 +15,10 @@ from .rules import TYPE_KW, extract_location, first_match
 from .schema import (ASK_ORDER, ENUMS, FIELDS, LIST_FIELDS, QUESTIONS, RANK, SEV_KW, as_list, derive_severity, evidence,
                      is_compact_time, missing, normalise, parse_time, severity_floor, severity_from_text)
 
+class ModelUnavailable(Exception):
+    """The LLM gave no usable answer and no rule-based fallback is configured."""
+
+
 MAX_FOLLOWUPS = 3   # plan: after 3 questions stop asking and let the person fill the rest on screen
 LOW_CONF = 0.45     # whole utterance: below this we ask the person to repeat
 WORD_LOW = 0.4      # single word: below this, and the word matters, we ask to confirm
@@ -66,6 +70,8 @@ class TurnResult:
     confirming: Optional[str] = None   # field we are asking "is that right?" about
     raw: str = ""                       # what Whisper heard, before the cleaning layer
     clean_how: str = "rules"            # llm | rules | none: who cleaned it
+    ai_trace: Optional[dict] = None     # raw answers of the model's focused questions
+    ai_missing: Optional[list] = None   # mandatory fields the model says are missing (None = it did not say)
     state: str = "ASKING"
     flags: dict = field(default_factory=dict)
 
@@ -89,10 +95,11 @@ _SET_KEY = {"severity": "severity", "incident type": "incident_type", "type": "i
 
 
 class Session:
-    def __init__(self, asr, extractor, store=None, now_fn=datetime.now, fallback=None, cleaner=None):
+    def __init__(self, asr, extractor, store=None, now_fn=datetime.now, fallback=None, cleaner=None, rule_cleaning=True):
         self.asr, self.ex, self.store, self.now_fn, self.fallback = asr, extractor, store, now_fn, fallback
+        self.ai_missing = None
         self.ai_mode = not extractor.__class__.__name__.startswith('Rule')
-        self.cleaner, self.clean_how = cleaner, "rules"
+        self.cleaner, self.clean_how, self.rule_cleaning = cleaner, "rules", rule_cleaning
         self.draft: dict = {}
         self.expected: Optional[str] = None
         self.followups = 0
@@ -120,17 +127,20 @@ class Session:
             a = self.asr.transcribe(speech)
             r, ex_s, valid, shortcut = self._core(a)
         r.asr_s, r.extract_s, r.total_s, r.llm_valid, r.used_shortcut = a.seconds, ex_s, total.s + a.seconds, valid, shortcut
-        r.flags, r.raw, r.clean_how = self.flags(), a.text, self.clean_how
+        r.flags, r.raw, r.clean_how, r.ai_missing = self.flags(), a.text, self.clean_how, self.ai_missing
+        r.ai_trace = getattr(self, 'ai_trace', None)
         return r
 
     def _core(self, a):
         if self.cleaner:                                      # AI cleaning layer (guarded; falls back to the deterministic cleaner)
             cleaned, self.clean_how = self.cleaner.clean(a.text)
-        else:
+        elif self.rule_cleaning:
             cleaned, self.clean_how = clean_transcript(a.text), "rules"
-        text, _ = fix_rooms(cleaned)                          # "conference room too" -> "Conference Room 2" before the LLM sees it
+        else:                                                 # AI-only mode with the AI cleaner off: the text goes to the model as heard
+            cleaned, self.clean_how = a.text, "raw"
+        text = cleaned if self.ai_mode else fix_rooms(cleaned)[0]      # AI-only: the model reads the room list itself
         now = self.now_fn()
-        if len(re.findall(r"[A-Za-z0-9]", text)) < 2 or _NOISE_TEXT.match(text):   # graceful failure 1: nothing heard / only fillers / noise
+        if len(re.findall(r"[A-Za-z0-9]", text)) < 2 or (not self.ai_mode and _NOISE_TEXT.match(text)):   # graceful failure 1: nothing heard / only fillers / noise
             return self._repeat(text), 0.0, True, False
         if self.queue:                                        # answering "is that right?"
             ans = "yes" if YES.match(text) else "no" if NO.match(text) else None
@@ -151,7 +161,11 @@ class Session:
         self.transcripts.append(text)
         first = len(self.transcripts) == 1
         self.repeats = 0
-        new, shortcut, ex_s, valid = self._interpret(text, now)
+        try:
+            new, shortcut, ex_s, valid = self._interpret(text, now)
+        except ModelUnavailable:
+            self.transcripts.pop()                            # nothing was understood: leave the report exactly as it was
+            raise
         held = self._uncertain(new, text, a.words, now, shortcut)
         if low:                                               # ASR was unsure of the whole thing: confirm what we took from it
             held = sorted(set(held) | set(new), key=lambda k: CONFIRM_ORDER.index(k) if k in CONFIRM_ORDER else 9)[:MAX_CONFIRMS]
@@ -197,8 +211,20 @@ class Session:
         quick = self._shortcut(text, now) if not self.ai_mode else None      # with a real LLM the model reads short answers too
         if quick:
             return quick, True, 0.0, True
-        e = self.ex.extract(text, self.draft, now, exp.replace("+", " and ") if exp else exp)
+        self.ex.rejudge = tuple(k for k, on in (("severity", self.sev_note == "derived"), ("incident_type", bool(getattr(self, "type_reason", None)))) if on and k not in self.locked)
+        e = self.ex.extract(text, self.draft, now, exp.replace("+", " and ") if exp else exp, context=self.full_text)
         fields, valid = e.fields, e.valid
+        if not valid and not self.fallback:
+            raise ModelUnavailable("The AI model did not answer (is Ollama running?). Nothing was changed. Please try again.")
+        self.ai_missing = e.missing            # what the model itself says is still missing (tools mode)
+        self.ai_trace = getattr(e, 'trace', None)
+        vl = getattr(e, 'vague_location', None)
+        if vl:
+            self.vague_loc = vl
+        if getattr(e, 'type_reason', None):
+            self.type_reason = e.type_reason
+        if getattr(e, 'sev_factors', None):
+            self.sev_factors = e.sev_factors
         if not valid and self.fallback:          # LLM failed twice -> rules keep the demo alive
             fe = self.fallback.extract(text, self.draft, now, exp)
             fields, valid = fe.fields, True
@@ -209,6 +235,9 @@ class Session:
         """Values we should not trust yet: Whisper was unsure of the words behind them, or the
         LLM's time disagrees with the plain time parser."""
         lowset = {_tok(w) for w, p in words if p < WORD_LOW and _tok(w)}
+        if self.ai_mode:                                      # AI-only: confirm only when Whisper itself was unsure of the words behind a value
+            out = [k for k, v in new.items() if k in ('datetime', 'location') and lowset & set(re.findall(r'[a-z0-9]+', (v[11:16].replace(':', ' ') + ' ' + v) .lower() if k == 'datetime' else v.lower()))]
+            return [k for k in sorted(out, key=CONFIRM_ORDER.index)][:MAX_CONFIRMS]
         out = []
         for k, v in new.items():
             bad = False
@@ -247,7 +276,7 @@ class Session:
                 have = {c.lower() for c in cur}
                 self.draft[k] = cur + [x for x in as_list(v) if x.lower() not in have]
             elif k == "location":
-                self.draft[k] = snap_location(v)
+                self.draft[k] = v if self.ai_mode else snap_location(v)
             else:
                 self.draft[k] = v
 
@@ -264,13 +293,20 @@ class Session:
             except ValueError:
                 del d["datetime"]
         self.type_guess = False
+        if d.get("location"):
+            self.vague_loc = None
         if not d.get("incident_type") and d.get("description") and len(d["description"].split()) >= 4:
             d["incident_type"] = "other"              # never keep asking: the person can change it on the review screen
             self.type_guess = True
         elif d.get("incident_type") == "other" and getattr(self, "_guessed", False):
             self.type_guess = True
         self._guessed = self.type_guess
-        if d.get("incident_type") and "severity" not in self.locked:
+        if self.ai_mode:                                      # AI-only: the model judged severity; code only warns if it looks too low
+            if d.get("severity") in RANK and "severity" not in self.locked:
+                self.sev_note = "derived"                       # judged by the model; no keyword floor
+            elif "severity" in self.locked:
+                self.sev_note = None
+        elif d.get("incident_type") and "severity" not in self.locked:
             text = self.full_text
             stated, floor = severity_from_text(text), severity_floor(d, text)
             if stated:
@@ -290,9 +326,11 @@ class Session:
             v["spans"] = [sp for sp in v["spans"] if sp[1] <= n]          # highlight only inside the shown transcript
             f[k] = v
         if getattr(self, "type_guess", False) and self.draft.get("incident_type") == "other":
-            f["incident_type"] = {"status": "derived", "spans": [], "note": "Not clear from what you said, so marked Other. Tap to change."}
+            f["incident_type"] = {"status": "derived", "spans": [], "note": ("Marked Other because none of the types fit" + (". What you described: " + self.type_reason if getattr(self, "type_reason", None) else "") + ". Tap to change.")}
+        elif getattr(self, "type_reason", None) and self.draft.get("incident_type") and "incident_type" not in f:
+            f["incident_type"] = {"status": "derived", "spans": [], "note": "Judged by the AI from: " + self.type_reason + ". Tap to change."}
         if self.sev_note == "derived" and "severity" in self.draft:
-            f["severity"] = {"status": "derived", "spans": [], "note": "Worked out from the incident type. Tap to change."}
+            f["severity"] = {"status": "derived", "spans": [], "note": (("Judged by the AI" + (": " + ", ".join(self.sev_factors) if getattr(self, "sev_factors", None) else " from what you said") + ". Tap to change.") if self.ai_mode else "Worked out from the incident type. Tap to change.")}
         elif self.sev_note == "check" and "severity" in self.draft:
             f["severity"] = {"status": "check", "spans": [], "note": "Lower than usual for this kind of incident. Please check."}
         return f
@@ -322,6 +360,8 @@ class Session:
         self.followups += 1
         self.expected = ask
         q = QUESTIONS[ask]
+        if ask in ("location", COMBINED) and getattr(self, "vague_loc", None):
+            q = f'You said "{self.vague_loc}". Which room number, block or floor is that exactly?'
         return TurnResult(text, dict(self.draft), miss, (self.notice + " " if self.notice else "") + q, False, state="ASKING")
 
     def _repeat(self, text):
@@ -363,13 +403,15 @@ class Session:
     def voice_edit(self, text: str) -> EditResult:
         """Review-screen mic. Plain patterns first ("change severity to high", "add Priya as a witness",
         "it was room 3, not room 2", "add that the floor was wet"); the model handles anything else."""
-        text, _ = fix_rooms(clean_transcript(text))
+        text = text if self.ai_mode else fix_rooms(clean_transcript(text))[0]
         now = self.now_fn()
         if len(re.findall(r"[A-Za-z0-9]", text)) < 2:
             return EditResult(False, "Sorry, I didn't catch that.", {})
-        if _SUBMIT.match(text):
+        if not self.ai_mode and _SUBMIT.match(text):
             return EditResult(True, "", {}, "submit")
         self.edits.append(text)
+        if self.ai_mode:                                      # AI-only: no pattern commands, the model reads the correction
+            return self._llm_edit(text, now)
         m = _MAKE_SEV.search(text)
         ms = _SET.search(text)
         if m or ms:
@@ -407,8 +449,16 @@ class Session:
             self.draft["description"] = (self.draft.get("description", "").rstrip(". ") + ". " + add[0].upper() + add[1:] + ".").lstrip(". ")
             self.locked.add("description")
             return EditResult(True, "Added to the description.", {"description": self.draft["description"]})
+        return self._llm_edit(text, now)
+
+    def _llm_edit(self, text, now) -> EditResult:
+        """Corrections understood by the model (the only path in AI-only mode)."""
         e = self.ex.extract(text, self.draft, now, "a correction to the finished report")
-        fields = e.fields if (e.valid or not self.fallback) else self.fallback.extract(text, self.draft, now).fields
+        if not e.valid and not self.fallback:
+            raise ModelUnavailable("The AI model did not answer (is Ollama running?). Nothing was changed. Please try again.")
+        fields = e.fields if e.valid else self.fallback.extract(text, self.draft, now).fields
+        if e.tool == "submit_report":
+            return EditResult(True, "", {}, "submit")
         fields.pop("description", None)
         changed = {k: v for k, v in fields.items() if self.draft.get(k) != v}
         if not changed:

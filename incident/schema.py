@@ -303,7 +303,7 @@ def ground(fields: dict, text: str, ai: bool = False) -> dict:
         t2 = re.sub(r"fire\s+(department|dept|brigade|station|truck|engines?|fighters?|extinguishers?|exit|drill|alarm|marshal|warden|safety)\b", " ", text.lower())
         if not re.search(r"\b(fire|smoke|flames?|burning|burnt)\b", t2):
             del out["incident_type"]
-    sev = severity_from_text(text)        # explicit severity words beat the model's guess
+    sev = None if ai else severity_from_text(text)        # rule mode only: explicit severity words beat the model's guess
     if sev:
         out["severity"] = sev
     # a location must come after a place word, otherwise "a pipe burst" gives location "a pipe"

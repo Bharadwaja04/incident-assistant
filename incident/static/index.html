@@ -159,8 +159,9 @@ const pretty = s => String(s).replace(/_/g,' ').replace(/^./, c => c.toUpperCase
 function fmtTime(iso){ const d = new Date(iso); if (isNaN(d)) return iso; return d.toLocaleString([], {day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit'}); }
 function fmt(k, v){ if (v == null || v === '' || (Array.isArray(v) && !v.length)) return ''; if (k === 'datetime') return fmtTime(v); if (k === 'incident_type' || k === 'severity') return pretty(v); return Array.isArray(v) ? v.join(', ') : v; }
 
-async function api(path, body, blob){
+async function api(path, body, blob, signal){
   const opt = blob ? {method:'POST', headers:{'Content-Type': blob.type || 'audio/webm'}, body: blob} : {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body || {})};
+  if (signal) opt.signal = signal;
   const r = await fetch(path, opt); const j = await r.json();
   if (!r.ok) throw new Error(j.error || 'Something went wrong'); return j;
 }
@@ -170,9 +171,10 @@ function err(t, where){ (where || $('#err')).textContent = t || ''; }
 // ---------- speech out (stand-in for MeloTTS on the board) ----------
 function speak(text, done){
   if (!$('#sw-speak').checked || !('speechSynthesis' in window) || !text) return done && done();
-  speechSynthesis.cancel(); setStatus('Speaking…'); $('#mic').disabled = true;
+  speechSynthesis.cancel(); setStatus('Speaking… (tap the mic to stop the voice)');
   const u = new SpeechSynthesisUtterance(text); u.rate = 1.05;
-  let fin = false; const end = () => { if (fin) return; fin = true; $('#mic').disabled = !S.mic; setStatus('Ready'); done && done(); };
+  let fin = false; const end = () => { if (fin) return; fin = true; S.stopSpeak = null; setStatus('Ready'); done && done(); };
+  S.stopSpeak = () => { try { speechSynthesis.cancel(); } catch(e){} fin = true; S.stopSpeak = null; };
   u.onend = end; u.onerror = end; setTimeout(end, 15000); speechSynthesis.speak(u);
 }
 
@@ -184,18 +186,19 @@ async function startRec(target){
   if (S.rec || !S.mic) return;
   let stream; try { stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true}}); } catch(e){ err('Microphone blocked: ' + e.message); return; }
   const mr = new MediaRecorder(stream), chunks = [], box = BOX[target]();
-  let inflight = false, stopped = false, seq = 0;
+  let inflight = false, stopped = false, seq = 0, ctl = null;
   const mk = () => new Blob(chunks, {type: mr.mimeType || 'audio/webm'});
   mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
   box.value = ''; box.placeholder = 'Listening… speak, and tap the mic again when you are done';
   const iv = setInterval(async () => {
     if (inflight || stopped || !chunks.length) return; inflight = true; const mine = ++seq;
-    try { const r = await api('/api/partial', null, mk()); if (!stopped && mine === seq) box.value = r.text; } catch(e){}
+    ctl = new AbortController();
+    try { const r = await api('/api/partial', null, mk(), ctl.signal); if (!stopped && mine === seq && !r.busy) box.value = r.text; } catch(e){}
     inflight = false;
   }, 2000);
   const cap = setTimeout(() => S.rec && S.rec.stop(), 180000);          // safety cap: 3 minutes
   mr.onstop = async () => {
-    stopped = true; clearInterval(iv); clearTimeout(cap); stream.getTracks().forEach(x => x.stop()); S.rec = null; setMicUI(false);
+    stopped = true; clearInterval(iv); clearTimeout(cap); if (ctl) ctl.abort(); stream.getTracks().forEach(x => x.stop()); S.rec = null; setMicUI(false);
     box.placeholder = target === 'turn' ? 'Or type what you would say' : 'Type a correction'; setStatus('Transcribing…');
     try {
       const r = await api('/api/transcribe', null, mk());
@@ -213,7 +216,10 @@ function setMicUI(on){
   $('#mic').classList.toggle('rec', on && t === 'turn'); $('#mic').textContent = on && t === 'turn' ? '■' : '🎙';
   $('#mic2').textContent = on && t === 'edit' ? '■ Stop' : '🎙 Say a correction';
 }
-function toggleRec(target){ if (S.rec) S.rec.stop(); else startRec(target); }
+function toggleRec(target){
+  if (S.stopSpeak){ S.stopSpeak(); setStatus('Ready'); return; }      // a tap while the assistant is talking only silences it
+  if (S.rec){ setStatus('Stopping…'); S.rec.stop(); } else startRec(target);
+}
 async function submitTyped(){
   const t = $('#typedIn').value.trim(); if (!t) return; const id = S.asrId; $('#typedIn').value = ''; S.asrId = null;
   try { await sendTurn({text: t, asr_id: id}); } catch(x){ err(x.message); setStatus('Ready'); }
@@ -227,7 +233,8 @@ async function sendTurn({text, blob, asr_id}){
   const r = await api('/api/turn', {text, asr_id}, blob); S.busy = false; absorb(r);
   if (r.transcript) say('me', r.transcript);
   const nz = x => String(x || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
-  if (r.raw && nz(r.raw) !== nz(r.transcript)) say('note', 'Whisper heard: “' + r.raw + '” → cleaned by ' + (r.clean_how === 'llm' ? 'AI' : 'rules') + ' before understanding');
+  if (r.raw && nz(r.raw) !== nz(r.transcript)) say('note', 'Whisper heard: “' + r.raw + '” → ' + (r.clean_how === 'llm' ? 'cleaned by AI before understanding' : 'sent as heard (nothing removed)'));
+  if (r.ai_missing) say('note', 'AI check: ' + (r.ai_missing.length ? 'still missing → ' + r.ai_missing.map(x => x === 'datetime' ? 'time' : x.replace('_',' ')).join(', ') + (r.ai_trace && Object.keys(r.ai_trace).length ? ' · model said: ' + Object.entries(r.ai_trace).map(([k,v]) => (k === 'datetime' ? 'time' : k) + '=“' + v + '”').join('; ') : '') : 'all required details present'));
   S.ready = r.ready; S.confirming = r.confirming; $('#confirm').hidden = !r.confirming;
   const t = r.timings; $('#timings').textContent = t ? `speech→text ${t.asr}s · understanding ${t.extract}s · total ${t.total}s` : '';
   if (r.ready || r.state === 'REVIEW'){

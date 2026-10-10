@@ -9,12 +9,11 @@ def build_tools():
     return [
         fn("create_incident_report", "Call when ALL mandatory fields (incident_type, location, datetime, description) are known.",
            {"type": "object", "properties": PROPS, "required": REQUIRED}),
-        fn("request_missing_info", "Call when a mandatory field is missing or unclear. Put what you heard so far in partial_report.",
+        fn("request_missing_info", "Call when a mandatory field is still missing. Put every field you extracted in partial_report and name the missing mandatory fields. Do not write a question.",
            {"type": "object", "properties": {
                "partial_report": {"type": "object", "properties": PROPS},
-               "missing_fields": {"type": "array", "items": {"type": "string", "enum": REQUIRED}},
-               "question": {"type": "string", "description": "One short question for the person"}},
-            "required": ["partial_report", "missing_fields", "question"]}),
+               "missing_fields": {"type": "array", "items": {"type": "string", "enum": REQUIRED}}},
+            "required": ["partial_report", "missing_fields"]}),
         fn("update_report_field", "Call when the person corrects something while reviewing (e.g. 'make it high severity').",
            {"type": "object", "properties": {"field": {"type": "string", "enum": FIELDS},
                                              "value": {"type": ["string", "array"], "items": {"type": "string"}}},

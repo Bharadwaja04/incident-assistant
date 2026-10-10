@@ -88,7 +88,7 @@
   "type": "function",
   "function": {
    "name": "request_missing_info",
-   "description": "Call when a mandatory field is missing or unclear. Put what you heard so far in partial_report.",
+   "description": "Call when a mandatory field is still missing. Put every field you extracted in partial_report and name the missing mandatory fields. Do not write a question.",
    "parameters": {
     "type": "object",
     "properties": {
@@ -175,16 +175,11 @@
         "description"
        ]
       }
-     },
-     "question": {
-      "type": "string",
-      "description": "One short question for the person"
      }
     },
     "required": [
      "partial_report",
-     "missing_fields",
-     "question"
+     "missing_fields"
     ]
    }
   }

@@ -37,9 +37,8 @@ class App:
             from .asr import WhisperASR, DOMAIN_PROMPT
             whisper = WhisperASR(a.whisper_model, prompt=DOMAIN_PROMPT, denoise=a.denoise == "on")
         self.whisper = whisper
-        self.rules = RuleExtractor()
-        self.ex = (OpenAICompatExtractor(a.base_url, a.model, mode=a.mode) if a.extractor == "llm" else self.rules)
-        self.cleaner = LLMCleaner(self.ex) if (a.cleaner == "llm" and a.extractor == "llm") else None
+        self.ex = OpenAICompatExtractor(a.base_url, a.model, mode=a.mode)          # AI only: no rule-based extractor in the app
+        self.cleaner = LLMCleaner(self.ex, rules_fallback=False) if a.cleaner == "llm" else None
         self.store = Store(a.db, a.reports)
         self.pending = {}                       # audio transcribed but not yet sent: id -> ASRResult (keeps word confidences)
         self.asr = MixedASR(whisper)
@@ -47,7 +46,7 @@ class App:
         self.new()
 
     def new(self):
-        self.s = Session(self.asr, self.ex, self.store, fallback=self.rules if self.ex is not self.rules else None, cleaner=self.cleaner)
+        self.s = Session(self.asr, self.ex, self.store, fallback=None, cleaner=self.cleaner, rule_cleaning=False)
 
     def state(self, extra=None):
         s = self.s
@@ -88,7 +87,7 @@ class App:
             speech = {"wav": self.wav_from(blob)}
         r = self.s.turn(speech)
         return self.state({"transcript": r.transcript, "message": r.message, "state": r.state, "ready": r.ready,
-                           "confirming": r.confirming, "needs_repeat": r.needs_repeat, "raw": r.raw, "clean_how": r.clean_how,
+                           "confirming": r.confirming, "needs_repeat": r.needs_repeat, "raw": r.raw, "clean_how": r.clean_how, "ai_missing": r.ai_missing, "ai_trace": r.ai_trace,
                            "timings": {"asr": round(r.asr_s, 2), "extract": round(r.extract_s, 2), "total": round(r.total_s, 2)}})
 
     def voice_edit(self, body: dict, blob: bytes = None):
@@ -101,6 +100,13 @@ class App:
         return self.state({"heard": text, "ok": r.ok, "message": r.message, "intent": r.intent})
 
     def handle(self, path, body, blob):
+        if path == "/api/partial":                  # live text: never queue behind other work, skip if the model is busy
+            if not self.lock.acquire(blocking=False):
+                return {"text": "", "busy": True}
+            try:
+                return {"text": self.transcribe_blob(blob, words=False).text}
+            finally:
+                self.lock.release()
         with self.lock:
             if path == "/api/partial":              # live text while the person is still speaking
                 return {"text": self.transcribe_blob(blob, words=False).text}
@@ -136,18 +142,21 @@ def make_handler(app: App):
 
         def _send(self, code, obj, ctype="application/json"):
             data = obj if isinstance(obj, bytes) else json.dumps(obj).encode()
-            self.send_response(code)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.send_response(code)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                pass                                        # the page cancelled this request (e.g. a live-text update when you tapped stop): not an error
 
         def do_GET(self):
             if self.path in ("/", "/index.html"):
                 return self._send(200, open(os.path.join(HERE, "static", "index.html"), "rb").read(), "text/html; charset=utf-8")
             if self.path == "/api/status":
                 return self._send(200, {"enums": ENUMS, "rooms": ROOMS, "asr": "whisper" if app.whisper else "typed text",
-                                        "llm": getattr(app.ex, "name", "rules"), "mic": bool(app.whisper),
+                                        "llm": getattr(app.ex, "name", "llm"), "mic": bool(app.whisper),
                                         "now": datetime.now().isoformat(timespec="minutes")})
             if self.path == "/api/history":
                 return self._send(200, app.store.all())
@@ -174,18 +183,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--asr", choices=["text", "whisper"], default="text")
     ap.add_argument("--whisper-model", default="base")
-    ap.add_argument("--extractor", choices=["rules", "llm"], default="rules")
+    ap.add_argument("--extractor", choices=["llm"], default="llm", help="kept for old commands; the app is AI-only")
     ap.add_argument("--base-url", default="http://localhost:11434/v1")
     ap.add_argument("--model", default="qwen3:1.7b")
-    ap.add_argument("--mode", choices=["json", "tools"], default="json", help="tools = native tool calls (llama-server --jinja)")
-    ap.add_argument("--cleaner", choices=["llm", "rules"], default="llm", help="llm = AI cleaning layer (guarded), rules = deterministic only")
+    ap.add_argument("--mode", choices=["json", "tools"], default="tools", help="tools = native tool calls (llama-server --jinja)")
+    ap.add_argument("--cleaner", choices=["llm", "off"], default="llm", help="llm = AI cleaning layer (guarded); off = send the text as heard")
     ap.add_argument("--denoise", choices=["on", "off"], default="on", help="amplitude (noise) gate before speech to text")
     ap.add_argument("--db", default="incidents.db")
     ap.add_argument("--reports", default="reports")
     ap.add_argument("--port", type=int, default=8000)
     a = ap.parse_args()
     app = App(a)
-    print(f"Incident Assistant on http://localhost:{a.port}   asr={'whisper ' + a.whisper_model if app.whisper else 'typed text'}  llm={getattr(app.ex, 'name', 'rules')}  cleaner={'AI (guarded)' if app.cleaner else 'rules'}")
+    print(f"Incident Assistant on http://localhost:{a.port}   asr={'whisper ' + a.whisper_model if app.whisper else 'typed text'}  llm={getattr(app.ex, 'name', 'llm')}  cleaner={'AI (guarded)' if app.cleaner else 'off'}")
     ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(app)).serve_forever()
 
 

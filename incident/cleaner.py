@@ -40,12 +40,12 @@ def accept_clean(raw: str, cleaned: str) -> bool:
 
 
 class LLMCleaner:
-    def __init__(self, llm):
-        self.llm, self.last_how, self.last_s = llm, "none", 0.0
+    def __init__(self, llm, rules_fallback=True):
+        self.llm, self.last_how, self.last_s, self.rules_fallback = llm, "none", 0.0, rules_fallback
 
     def clean(self, raw: str):
         """Returns (text, how) with how in 'llm', 'rules' (guard or model failed), 'none' (nothing to clean)."""
-        fallback = normalize(raw).text
+        fallback = normalize(raw).text if self.rules_fallback else raw      # AI-only mode: if the AI result is rejected, keep the text as heard
         if len(raw.split()) <= 3:                       # "yes", "847 PM": nothing to clean
             return fallback, "none"
         t0 = time.perf_counter()
@@ -57,4 +57,4 @@ class LLMCleaner:
                 return out, "llm"
         except Exception:
             self.last_s = time.perf_counter() - t0
-        return fallback, "rules"
+        return fallback, "rules" if self.rules_fallback else "raw"

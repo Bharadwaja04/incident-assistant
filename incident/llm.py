@@ -7,11 +7,28 @@ In both, the code validates and the model never decides what is missing."""
 from __future__ import annotations
 import json, os, sys, time, urllib.request
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from .rooms import ROOMS
 from .schema import CFG, ground, normalise, parse_time
 from .rules import extract_rules
+
+import re
+_wtoks = lambda t: re.findall(r"[a-z0-9]+", t.lower())
+def _iso_from_model(out, now):
+    """The model's time answer, reshaped to YYYY-MM-DDTHH:MM. Accepts '2026-10-10T20:35', '2026-10-10 20:35' or just '20:35' (today)."""
+    m = re.search(r"(\d{4}-\d{2}-\d{2})[T ](\d{1,2}):(\d{2})", out)
+    if m:
+        return f"{m.group(1)}T{int(m.group(2)):02d}:{m.group(3)}"
+    m = re.fullmatch(r"\s*(\d{1,2}):(\d{2})\s*", out)
+    if m and int(m.group(1)) < 24:
+        return f"{now.strftime('%Y-%m-%d')}T{int(m.group(1)):02d}:{m.group(2)}"
+    m = re.fullmatch(r"\s*(\d{1,2})[:.](\d{2})\s*([ap])\.?m\.?\s*", out, re.I)       # '8:35 PM': the model's answer, only reshaped
+    if m and 1 <= int(m.group(1)) <= 12:
+        h = int(m.group(1)) % 12 + (12 if m.group(3).lower() == "p" else 0)
+        return f"{now.strftime('%Y-%m-%d')}T{h:02d}:{m.group(2)}"
+    return None
+
 
 DEBUG = lambda: bool(os.environ.get("INCIDENT_DEBUG"))
 JSON_TAIL = "\n\nOutput: reply with ONE JSON object and nothing else."
@@ -30,6 +47,11 @@ class Extraction:
     raw: str = ""
     error: str = ""
     tool: str = ""              # tool name in tools mode
+    type_reason: Optional[str] = None
+    vague_location: Optional[str] = None  # a place the model judged too general ('my room')
+    trace: Optional[dict] = None         # what the model answered to each focused question (for the 'AI check' line)
+    sev_factors: Optional[list] = None   # the reasons the model gave for its severity judgement
+    missing: Optional[list] = None   # mandatory fields the MODEL says are still missing (tools mode); None = model did not say
 
     @property
     def tokens_per_s(self):
@@ -38,7 +60,7 @@ class Extraction:
 
 class RuleExtractor:
     name = "rules"
-    def extract(self, text: str, draft: dict, now: datetime, expected: Optional[str] = None) -> Extraction:
+    def extract(self, text: str, draft: dict, now: datetime, expected: Optional[str] = None, context: str = "") -> Extraction:
         t0 = time.perf_counter()
         f = normalise(extract_rules(text, now), now)
         return Extraction(f, seconds=time.perf_counter() - t0)
@@ -49,6 +71,16 @@ def _json_from(text: str):
     if a < 0 or b <= a:
         raise ValueError("no JSON object found")
     return json.loads(text[a:b + 1])
+
+
+_STOP = set("a an the of in on at to and or is was were are be been has have had with by for from that this it its as not no one some people person there their they he she we i you me my our his her".split())
+
+def _supported(phrase: str, text: str, need: float = 0.5) -> bool:
+    """A stated reason must rest on the person's own words: at least half of its meaningful words must appear in what was said."""
+    stem = lambda w: w[:5]
+    have = {stem(w) for w in re.findall(r"[a-z0-9]+", text.lower())}
+    ws = [w for w in re.findall(r"[a-z0-9]+", phrase.lower()) if w not in _STOP and len(w) > 2]
+    return bool(ws) and sum(stem(w) in have for w in ws) / len(ws) >= need
 
 
 def fields_from_tool_call(name: str, args) -> dict:
@@ -71,7 +103,8 @@ class OpenAICompatExtractor:
     def __init__(self, base_url="http://localhost:11434/v1", model="qwen3:1.7b", max_tokens=300, timeout=60, mode="json"):
         self.base, self.model, self.max_tokens, self.timeout, self.mode = base_url.rstrip("/"), model, max_tokens, timeout, mode
         self.name = f"llm:{model}" + ("+tools" if mode == "tools" else "")
-        self.prompt = open(os.path.join(CFG, "system_prompt.txt")).read().replace("{rooms}", ", ".join(ROOMS))
+        pf = "system_prompt_extract.txt" if mode == "tools" else "system_prompt.txt"      # tools mode = extraction only, no generation
+        self.prompt = open(os.path.join(CFG, pf)).read().replace("{rooms}", ", ".join(ROOMS))
         self.prompt += TOOL_TAIL if mode == "tools" else JSON_TAIL
         if "qwen3" in model:
             self.prompt = "/no_think\n" + self.prompt
@@ -134,34 +167,252 @@ class OpenAICompatExtractor:
         except Exception:
             return {}
 
-    def extract(self, text: str, draft: dict, now: datetime, expected: Optional[str] = None) -> Extraction:
+    FOCUS = {}
+    TYPE_PROMPT = (
+        "Decide which ONE category best fits the incident, using only what the person said. Reply with ONE JSON object only: "
+        '{"type": one of water_leak, fire, electrical, injury, security, equipment_failure, chemical_spill, near_miss, it_outage, other, '
+        '"reason": one short sentence saying which words in the description led you to this}. '
+        "What each category means: water_leak = water where it should not be; fire = fire, smoke, burning; electrical = power, wiring, shock, sparks; "
+        "injury = a person hurt or ill; security = theft, break-in, unauthorised entry, threats; "
+        "equipment_failure = any machine, vehicle, lift, motor, crane, conveyor, building structure or tool that broke, stuck, fell, collapsed or stopped working; "
+        "chemical_spill = chemical, oil or fuel spill, gas smell or leak; near_miss = something that almost caused harm but did not; "
+        "it_outage = ONLY computers, network, internet, servers or software not working (never use it for machines, vehicles or buildings); "
+        "other = only if none of the above fit. Pick the category for the main thing that went wrong.")
+
+    LOCATION_PROMPT = (
+        "Find WHERE the incident happened, using only what the person said. If the person corrects themselves, use the corrected place. Reply with ONE JSON object only: "
+        '{"place": the place in the speaker\'s own words, or null if no place is said, "specific": true or false, "reason": one short sentence}. '
+        'Set "specific" to false when the place is too general for someone to go and find it (for example just "my room", "the building", "outside", "here", "home", '
+        '"the office"). Set it to true when it names something findable such as a room number, a block, a floor, a named room or an area of a site.')
+    TIME_PROMPT = (
+        "Find WHEN the incident happened, using only what the person said, and call the function resolve_time. If the person corrects themselves ('it was 8, no, 10 p.m.'), use the corrected time, the last one said. "
+        "Do not work out dates or subtract anything yourself, the function does that. "
+        "Use minutes_ago when the person says how long ago it was (two hours ago = 120, ten minutes ago = 10, half an hour ago = 30). "
+        "Use hour, minute and period when the person gives a time of day: copy the numbers exactly as said, do NOT convert to 24-hour "
+        "(10:35 p.m. = hour 10, minute 35, period pm; half past six in the morning = hour 6, minute 30, period am). Leave period out if they did not say am or pm. "
+        "Use just_now when it is happening right now or just happened. If no time is said at all, call the function with no arguments.")
+    TIME_TOOL = [{"type": "function", "function": {
+        "name": "resolve_time", "description": "Turn the time the person said into a timestamp. Give only what was said.",
+        "parameters": {"type": "object", "properties": {
+            "minutes_ago": {"type": "number", "description": "How many minutes ago, e.g. 120 for two hours ago."},
+            "hour": {"type": "number", "description": "Hour exactly as said, 1 to 12 (or 0 to 23 if said on a 24-hour clock)."},
+            "minute": {"type": "number", "description": "Minutes exactly as said, 0 if none."},
+            "period": {"type": "string", "enum": ["am", "pm"], "description": "am or pm, only if the person said it."},
+            "day": {"type": "string", "enum": ["today", "yesterday"]},
+            "just_now": {"type": "boolean", "description": "True only if it is happening right now or just happened."}}}}}]
+
+    @staticmethod
+    def resolve_time(now: datetime, minutes_ago=None, hour=None, minute=None, period=None, day=None, just_now=None, clock=None):
+        """The function the model calls. Plain date arithmetic, the one thing a small language model cannot do reliably."""
+        base = now.replace(second=0, microsecond=0)
+        try:
+            if isinstance(minutes_ago, (int, float)) and not isinstance(minutes_ago, bool) and 0 < minutes_ago < 60 * 24 * 14:
+                return (base - timedelta(minutes=float(minutes_ago))).isoformat(timespec="minutes")
+            if hour is None and clock:                                   # an "HH:MM" string is still accepted
+                m = re.fullmatch(r"\s*(\d{1,2})[:.](\d{2})\s*", str(clock))
+                if m: hour, minute = int(m.group(1)), int(m.group(2))
+            if isinstance(hour, (int, float)) and not isinstance(hour, bool) and 0 <= hour < 24:
+                h, mi = int(hour), int(minute or 0)
+                if not 0 <= mi < 60: return None
+                per = str(period or "").lower().replace(".", "")[:2]
+                if per in ("am", "pm") and 1 <= h <= 12:
+                    cands = [h % 12 + (12 if per == "pm" else 0)]       # the code, not the model, does the 12-hour to 24-hour conversion
+                elif 1 <= h <= 12:
+                    cands = [h % 12, h % 12 + 12]                          # no am/pm said: take the most recent one that has already happened
+                else:
+                    cands = [h]
+                times = [base.replace(hour=c, minute=mi) for c in cands]
+                past = [t for t in times if t <= base + timedelta(minutes=5)]
+                t = max(past) if past else max(times) - timedelta(days=1)
+                if str(day).lower() == "yesterday" and t.date() == base.date():
+                    t -= timedelta(days=1)
+                return t.isoformat(timespec="minutes")
+            if just_now is True:
+                return base.isoformat(timespec="minutes")
+        except Exception:
+            pass
+        return None
+
+    SEVERITY_PROMPT = (
+        "You judge how severe an incident is, like an experienced safety officer. Weigh these factors TOGETHER; no single factor decides, and you interpret them, "
+        "you do not count words: (1) harm to people: anyone hurt, dizzy, trapped or at risk; (2) the kind of hazard: fire, smoke, gas, chemical, electric shock, "
+        "explosion, falling or moving machinery; (3) spread and exposure: how many people, contained or spreading; (4) whether the danger is still ongoing or already controlled; "
+        "(5) impact: production stopped, damage, safety systems affected; (6) how seriously the speaker themself treats it. "
+        "Severity levels: low (minor, nobody at risk), medium (a contained problem to fix today), high (people hurt or at real risk), critical (life-threatening, a collapse, explosion or very large and still happening). "
+        "Use ONLY facts the person actually said: never assume anyone is hurt, trapped or in danger unless they said so, and say 'nobody reported hurt' when that is the case. "
+        'Reply with ONE JSON object only: {"factors": [1 to 4 short phrases, each stating a fact from the description that drove your judgement], "severity": "low|medium|high|critical"}.')
+
+    def judge_severity(self, context: str, now: datetime):
+        """The model judges severity by interpreting factors (no keyword rules). Returns (severity, factors) or (None, [])."""
+        try:
+            d = _json_from(self.plain(self.SEVERITY_PROMPT, "Incident description: " + context, max_tokens=120))
+            sev = normalise({"severity": str(d.get("severity", "")).lower().strip()}, now).get("severity")
+            fac = [str(x).strip() for x in (d.get("factors") or []) if str(x).strip()][:4]
+            fac = [x for x in fac if _supported(x, context)]          # keep only reasons that rest on words the person actually said
+            return sev, fac
+        except Exception:
+            return None, []
+
+    def focus_location(self, context: str):
+        """(place, specific): the model finds the place and judges whether it is findable. Returns (None, True) if no place is said."""
+        self.trace = getattr(self, 'trace', {})
+        try:
+            raw = self.plain(self.LOCATION_PROMPT, "Incident description: " + context, max_tokens=60)
+            d = _json_from(raw)
+        except Exception:
+            return None, True
+        self.trace["location"] = f"{d.get('place')} (specific={d.get('specific')}: {d.get('reason')})"
+        place = d.get("place")
+        place = str(place).strip().strip('"') if place else None
+        if not place or place.lower() in ("null", "none"):
+            return None, True
+        return place, d.get("specific") is not False
+
+    def focus_time(self, context: str, now: datetime):
+        """Returns (iso_or_None, understood). The model calls resolve_time with what was said; the function does the arithmetic."""
+        self.trace = getattr(self, 'trace', {})
+        body = {"model": self.model, "temperature": 0, "max_tokens": 80, "stream": False, "reasoning_effort": "none",
+                "messages": [{"role": "system", "content": ("/no_think\n" if "qwen3" in self.model else "") + self.TIME_PROMPT},
+                             {"role": "user", "content": "Incident description: " + context}],
+                "tools": self.TIME_TOOL}
+        try:
+            req = urllib.request.Request(self.base + "/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                msg = json.load(r)["choices"][0]["message"]
+        except Exception:
+            return None, False
+        args = None
+        for tc in msg.get("tool_calls") or []:
+            if tc.get("function", {}).get("name") == "resolve_time":
+                args = tc["function"].get("arguments") or {}
+                break
+        if args is None:                                       # some servers answer in text: accept a JSON object there too
+            try:
+                args = _json_from(msg.get("content") or "")
+            except Exception:
+                return None, False
+        if isinstance(args, str):
+            try: args = json.loads(args)
+            except Exception: return None, False
+        args = {k: args.get(k) for k in ("minutes_ago", "hour", "minute", "period", "clock", "day", "just_now")}
+        iso = self.resolve_time(now, **args)
+        self.trace["time"] = "resolve_time(" + ", ".join(f"{k}={v}" for k, v in args.items() if v not in (None, "")) + ")" + (f" → {iso}" if iso else "")
+        return iso, True
+
+    def focus_type(self, context: str):
+        """(type, reason): the model picks the category and says why."""
+        self.trace = getattr(self, 'trace', {})
+        try:
+            d = _json_from(self.plain(self.TYPE_PROMPT, "Incident description: " + context, max_tokens=90))
+        except Exception:
+            return None, None
+        t = normalise({"incident_type": str(d.get("type", "")).lower().replace(" ", "_")}, datetime.now()).get("incident_type")
+        reason = str(d.get("reason") or "").strip()
+        what = str(d.get("what_happened") or "").strip()
+        self.trace["incident_type"] = f"{d.get('type')} ({reason})"
+        note = what if _supported(what, context) else reason if _supported(reason, context) else ""
+        return t, note
+
+    def focus(self, field: str, context: str, now: datetime) -> Optional[str]:
+        """One tiny, single-question AI call for a mandatory field the big pass missed. Easy for a small model, and it reads
+        everything said so far, not just the last sentence."""
+        self.trace = getattr(self, 'trace', {})
+        try:
+            out = self.plain(self.FOCUS[field] + " Reply with nothing else.",
+                             f"Now: {now.strftime('%Y-%m-%d %H:%M')}\nIncident description: {context}", max_tokens=40)
+            out = out.strip().strip('"').strip("'").splitlines()[0].strip().rstrip(".") if out.strip() else ""
+        except Exception:
+            return None
+        self.trace[field] = out
+        if not out or out.upper().startswith("NONE"):
+            return None
+        if field == "datetime":
+            return _iso_from_model(out, now)                  # the model's own answer, only reshaped into one format
+        if field == "incident_type":
+            out = out.lower().replace(" ", "_")
+            return normalise({field: out}, now).get(field)
+        return normalise({field: out}, now).get(field)
+
+    def extract(self, text: str, draft: dict, now: datetime, expected: Optional[str] = None, context: str = "") -> Extraction:
         user = (f"Now: {now.strftime('%Y-%m-%d %H:%M')}\nCurrent report: {json.dumps(draft)}\n"
                 + (f"(We just asked about: {expected})\n" if expected else "") + f"New utterance: {text}")
         msgs = [{"role": "system", "content": self.prompt}, {"role": "user", "content": user}]
         t0, toks, raw, err = time.perf_counter(), 0, "", ""
+        self.trace = {}
         for attempt in (1, 2):
             try:
                 msg, n = self._chat(msgs)
                 toks += n
-                tool = ""
+                tool, ai_missing = "", None
                 calls = msg.get("tool_calls") or []
                 if calls:                                    # tools mode (or a model that used a tool anyway)
                     tool = calls[0]["function"]["name"]
                     raw = json.dumps(calls[0]["function"])
-                    fields = fields_from_tool_call(tool, calls[0]["function"].get("arguments", {}))
+                    args = calls[0]["function"].get("arguments", {})
+                    args = json.loads(args) if isinstance(args, str) else (args or {})
+                    fields = fields_from_tool_call(tool, args)
+                    if tool == "create_incident_report":
+                        ai_missing = []
+                    elif tool == "request_missing_info":
+                        ai_missing = [m for m in (args.get("missing_fields") or []) if m in ("incident_type", "location", "datetime", "description")]
                 else:                                        # JSON mode, or a tools-mode model that answered in text
                     raw = msg.get("content") or ""
                     fields = _json_from(raw)
                 f = ground(normalise(fields, now), text, ai=True)      # AI mode: only 'is it in what was said' checks, no keyword rules
-                rp = parse_time(text, now) if "datetime" in f else None
-                if rp and rp != f["datetime"]:
-                    f["datetime"] = rp                  # a clock time the person actually said beats the model's arithmetic ("8.35 PM" is 20:35, not 21:35)
+                if self.mode == "tools" and f.get("description"):         # extraction only: the description must be the person's own words
+                    dw, tw = set(_wtoks(f["description"])), set(_wtoks(text))
+                    if dw and len(dw & tw) / len(dw) < 0.8:
+                        f["description"] = text.strip()
                 if len(text.split()) >= 10 and not all(f.get(k) for k in self.OPTIONAL):
                     extra = ground(normalise(self.details(text), now), text, ai=True)      # optional details were skipped: ask again, just for them
                     for k in self.OPTIONAL:
                         if k in extra and not f.get(k):          # never overwrite what the main pass already found
                             f[k] = extra[k]
-                return Extraction(f, True, attempt, time.perf_counter() - t0, toks, raw, tool=tool)
+                if True:
+                    ctx = context or text
+                    type_reason = None
+                    weak = f.get("incident_type") == "other"                  # "other" is a weak answer: get a second opinion
+                    if weak or not (f.get("incident_type") or draft.get("incident_type")):
+                        v, type_reason = self.focus_type(ctx)
+                        if v and not (weak and v == "other"):
+                            f["incident_type"] = v
+                    vague = None
+                    # Time and place are read from what was just said, so a correction ("it was 10 p.m., not 8:35") replaces the old value.
+                    # Only if the report still lacks them is everything said so far searched.
+                    scopes = list(dict.fromkeys([text, ctx]))
+                    for scope in scopes:
+                        if scope is text or not (f.get("location") or draft.get("location") or vague):
+                            place, specific = self.focus_location(scope)
+                            if place and not specific:
+                                vague = place
+                                f.pop("location", None)                       # too general to store: ask for something narrower
+                            elif place:
+                                got = ground({"location": place}, ctx, ai=True)
+                                if got.get("location"):
+                                    f["location"] = got["location"]
+                            elif scope is text and f.get("location") and not draft.get("location"):
+                                f.pop("location", None)                       # the main pass named a place the focused read could not find
+                        if scope is text or not (f.get("datetime") or draft.get("datetime")):
+                            iso, understood = self.focus_time(scope, now)
+                            if iso:
+                                f["datetime"] = iso
+                            elif understood:
+                                f.pop("datetime", None)                       # no time in these words: keep what the report already has
+                    sev_factors = None
+                    redo = getattr(self, "rejudge", ()) or ()
+                    if "incident_type" in redo and f.get("incident_type") is None:
+                        v, type_reason = self.focus_type(ctx)             # new details may change what kind of incident this is
+                        if v and v != "other":
+                            f["incident_type"] = v
+                    if "severity" in redo or not (f.get("severity") or draft.get("severity")):
+                        sv, sev_factors = self.judge_severity(ctx, now)
+                        if sv:
+                            f["severity"] = sv
+                    if not (f.get("description") or draft.get("description")):
+                        f["description"] = text.strip()          # extraction only: the description is the person's own words
+                    if ai_missing is not None:
+                        ai_missing = [k for k in ("incident_type", "location", "datetime", "description") if not (f.get(k) or draft.get(k))]
+                return Extraction(f, True, attempt, time.perf_counter() - t0, toks, raw, tool=tool, missing=ai_missing, sev_factors=sev_factors, trace=dict(self.trace), vague_location=vague, type_reason=type_reason)
             except Exception as e:  # bad JSON or server hiccup
                 err = str(e)
                 msgs = msgs + [{"role": "assistant", "content": raw or "(no output)"},
