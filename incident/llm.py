@@ -66,6 +66,25 @@ class RuleExtractor:
         return Extraction(f, seconds=time.perf_counter() - t0)
 
 
+def _first_json(text):
+    """The first complete {...} object in a text (a model may write the same call twice or add a stray tag after it)."""
+    a = text.find("{")
+    if a < 0: raise ValueError("no JSON object found")
+    depth = 0; in_str = False; esc = False
+    for i in range(a, len(text)):
+        c = text[i]
+        if in_str:
+            esc = (c == "\\" and not esc)
+            if c == '"' and not esc: in_str = False
+            continue
+        if c == '"': in_str = True
+        elif c == "{": depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0: return json.loads(text[a:i + 1])
+    raise ValueError("unfinished JSON object")
+
+
 def _json_from(text: str):
     a, b = text.find("{"), text.rfind("}")
     if a < 0 or b <= a:
@@ -145,7 +164,7 @@ class OpenAICompatExtractor:
     DETAILS_PROMPT = (
         "Read an incident description and pick out the optional details that are EXPLICITLY said. Reply with one JSON object and nothing else. "
         "Keys (leave a key out if it was not said): "
-        "persons_involved (people hurt, affected or involved, e.g. [\"two operators\"]); "
+        "persons_involved (PEOPLE only, hurt, affected or involved, e.g. [\"two operators\"]; a machine, vehicle or object is never a person, put it under equipment); "
         "witnesses (people who saw or noticed it, by name or role, e.g. [\"Ravi\"]); "
         "equipment (machines or tools, short names, e.g. [\"boiler\", \"gas line valve\"]); "
         "immediate_actions (things people ALREADY DID in response, in the speaker's words, e.g. \"Switched off the boiler, evacuated the area, called the safety officer\"); "
@@ -180,32 +199,71 @@ class OpenAICompatExtractor:
         "other = only if none of the above fit. Pick the category for the main thing that went wrong.")
 
     LOCATION_PROMPT = (
-        "Find WHERE the incident happened, using only what the person said. If the person corrects themselves, use the corrected place. Reply with ONE JSON object only: "
+        "Find WHERE the incident happened, using only what the person said, across the whole conversation. Later details add to or correct earlier ones: give the most complete place the person has described, joining the parts in their own words (a site plus a block plus a floor), and if they correct themselves use the corrected place. Reply with ONE JSON object only: "
         '{"place": the place in the speaker\'s own words, or null if no place is said, "specific": true or false, "reason": one short sentence}. '
         'Set "specific" to false when the place is too general for someone to go and find it (for example just "my room", "the building", "outside", "here", "home", '
-        '"the office"). Set it to true when it names something findable such as a room number, a block, a floor, a named room or an area of a site.')
+        '"the office"). Set it to true when it names something findable such as a room number, a block, a floor, a named room, an area of a site, or a named place together with its city.')
     TIME_PROMPT = (
-        "Find WHEN the incident happened, using only what the person said, and call the function resolve_time. If the person corrects themselves ('it was 8, no, 10 p.m.'), use the corrected time, the last one said. "
-        "Do not work out dates or subtract anything yourself, the function does that. "
-        "Use minutes_ago when the person says how long ago it was (two hours ago = 120, ten minutes ago = 10, half an hour ago = 30). "
-        "Use hour, minute and period when the person gives a time of day: copy the numbers exactly as said, do NOT convert to 24-hour "
-        "(10:35 p.m. = hour 10, minute 35, period pm; half past six in the morning = hour 6, minute 30, period am). Leave period out if they did not say am or pm. "
-        "Use just_now when it is happening right now or just happened. If no time is said at all, call the function with no arguments.")
-    TIME_TOOL = [{"type": "function", "function": {
-        "name": "resolve_time", "description": "Turn the time the person said into a timestamp. Give only what was said.",
-        "parameters": {"type": "object", "properties": {
-            "minutes_ago": {"type": "number", "description": "How many minutes ago, e.g. 120 for two hours ago."},
-            "hour": {"type": "number", "description": "Hour exactly as said, 1 to 12 (or 0 to 23 if said on a 24-hour clock)."},
-            "minute": {"type": "number", "description": "Minutes exactly as said, 0 if none."},
+        "Find WHEN the incident happened, using only what the person said, by calling exactly ONE function. If the person corrects themselves ('it was 8, no, 10 p.m.'), use the corrected time, the last one said. "
+        "Never work out dates or subtract anything yourself, the functions do that. Copy numbers exactly as spoken and do NOT convert to 24-hour. "
+        "at_clock_time: a time of day and/or a day was said (10:35 p.m. = hour 10, minute 35, period pm; half past six in the morning = hour 6, minute 30, period am; noon = hour 12, minute 0, period pm; "
+        "midnight = hour 12, minute 0, period am; 14:05 = hour 14, minute 5). If a day was said with it, add days_back: 'yesterday at 8:39 pm' = hour 8, minute 39, period pm, days_back 1; "
+        "'yesterday morning at 9' = hour 9, minute 0, period am, days_back 1; 'two days ago at 3 pm' = hour 3, minute 0, period pm, days_back 2. "
+        "time_ago: only how long ago it was (two hours ago = 120 minutes, ten minutes ago = 10, half an hour ago = 30, an hour and a half ago = 90). "
+        "For a day with no time of day, call at_clock_time with only days_back ('yesterday' = days_back 1, 'the day before yesterday' = 2, 'three days ago' = 3). "
+        "just_now: it is happening right now or just happened. no_time_said: the person gave no time at all.")
+    TIME_SHIFT_PROMPT = (
+        "The message shows a time that is ALREADY in the report. When the person moves THAT time with words like before, earlier, later, after or push back "
+        "('two hours before', 'an hour later', 'half an hour earlier'), call move_report_time with the minutes and the direction. "
+        "Never use time_ago for these; time_ago is only for the word 'ago' counted from now.")
+    @staticmethod
+    def _fn(name, desc, props, req):
+        return {"type": "function", "function": {"name": name, "description": desc, "parameters": {"type": "object", "properties": props, "required": req}}}
+    TIME_TOOL = [
+        _fn.__func__("at_clock_time", "A time of day and/or a day was said: 'at 9', 'morning at 9', 'noon', 'yesterday at 8:39 pm', or only 'yesterday'.", {
+            "hour": {"type": "number", "description": "Hour exactly as said, 1 to 12 (or 0 to 23 if said on a 24-hour clock). Leave out if only a day was said."},
+            "minute": {"type": "number", "description": "Minutes exactly as said, 0 if none. Leave out if only a day was said."},
             "period": {"type": "string", "enum": ["am", "pm"], "description": "am or pm, only if the person said it."},
-            "day": {"type": "string", "enum": ["today", "yesterday"]},
-            "just_now": {"type": "boolean", "description": "True only if it is happening right now or just happened."}}}}}]
+            "days_back": {"type": "number", "description": "Only if a day was said: yesterday = 1, the day before yesterday = 2, three days ago = 3. Leave out for today."}}, []),
+        _fn.__func__("time_ago", "Only how long ago it happened, counting from now.", {
+            "minutes": {"type": "number", "description": "Minutes ago: two hours = 120, half an hour = 30, ten minutes = 10."}}, ["minutes"]),
+        _fn.__func__("just_now", "It is happening right now or just happened.", {"confirm": {"type": "boolean", "description": "Always true."}}, ["confirm"]),
+        _fn.__func__("no_time_said", "The person gave no time at all.", {"note": {"type": "string", "description": "Two or three words, e.g. 'no time'."}}, ["note"]),
+        _fn.__func__("move_report_time", "Move the time that is ALREADY IN THE REPORT earlier or later.", {
+            "minutes": {"type": "number", "description": "How many minutes: two hours = 120, half an hour = 30."},
+            "direction": {"type": "string", "enum": ["earlier", "later"], "description": "earlier for before/earlier, later for later/after."}}, ["minutes", "direction"]),
+    ]
 
     @staticmethod
-    def resolve_time(now: datetime, minutes_ago=None, hour=None, minute=None, period=None, day=None, just_now=None, clock=None):
+    def time_args(name, a):
+        """What the model chose -> the inputs of resolve_time (plain mapping, no judgement)."""
+        a = a or {}
+        if name == "at_clock_time": return {"hour": a.get("hour"), "minute": a.get("minute"), "period": a.get("period"), "days_ago": a.get("days_back")}
+        if name == "time_ago": return {"minutes_ago": a.get("minutes")}
+        if name == "days_ago_only": return {"days_ago": a.get("days")}
+        if name == "just_now": return {"just_now": True}
+        if name == "no_time_said": return {}
+        if name == "move_report_time":
+            return {"minutes_before": a.get("minutes")} if str(a.get("direction", "")).lower().startswith("earl") else {"minutes_after": a.get("minutes")}
+        return {k: a.get(k) for k in ("minutes_ago", "hour", "minute", "period", "clock", "day", "just_now", "minutes_before", "minutes_after", "days_ago")}   # an older-style call
+
+    @classmethod
+    def time_tool_plain(cls):
+        """The tool without the 'move the time already in the report' inputs, offered only when the report has no time yet."""
+        import copy
+        t = copy.deepcopy(cls.TIME_TOOL)
+        t = [x for x in t if x["function"]["name"] != "move_report_time"]
+        return t
+
+    @staticmethod
+    def resolve_time(now: datetime, minutes_ago=None, hour=None, minute=None, period=None, day=None, just_now=None, clock=None, minutes_before=None, minutes_after=None, reported=None, days_ago=None):
         """The function the model calls. Plain date arithmetic, the one thing a small language model cannot do reliably."""
         base = now.replace(second=0, microsecond=0)
         try:
+            num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and 0 < v < 60 * 24 * 14
+            if reported and (num(minutes_before) or num(minutes_after)):   # moving the time already in the report: plain subtraction or addition
+                r = datetime.fromisoformat(str(reported)[:16])
+                return (r - timedelta(minutes=float(minutes_before)) if num(minutes_before) else r + timedelta(minutes=float(minutes_after))).isoformat(timespec="minutes")
             if isinstance(minutes_ago, (int, float)) and not isinstance(minutes_ago, bool) and 0 < minutes_ago < 60 * 24 * 14:
                 return (base - timedelta(minutes=float(minutes_ago))).isoformat(timespec="minutes")
             if hour is None and clock:                                   # an "HH:MM" string is still accepted
@@ -221,12 +279,17 @@ class OpenAICompatExtractor:
                     cands = [h % 12, h % 12 + 12]                          # no am/pm said: take the most recent one that has already happened
                 else:
                     cands = [h]
+                if num(days_ago):                                          # a clock time on a day N days back
+                    d = base - timedelta(days=int(days_ago))
+                    return d.replace(hour=max(cands), minute=mi).isoformat(timespec="minutes")
                 times = [base.replace(hour=c, minute=mi) for c in cands]
                 past = [t for t in times if t <= base + timedelta(minutes=5)]
                 t = max(past) if past else max(times) - timedelta(days=1)
                 if str(day).lower() == "yesterday" and t.date() == base.date():
                     t -= timedelta(days=1)
                 return t.isoformat(timespec="minutes")
+            if num(days_ago):                                              # "two days ago" with no clock time: same time of day, N days back
+                return (base - timedelta(days=int(days_ago))).isoformat(timespec="minutes")
             if just_now is True:
                 return base.isoformat(timespec="minutes")
         except Exception:
@@ -268,35 +331,38 @@ class OpenAICompatExtractor:
             return None, True
         return place, d.get("specific") is not False
 
-    def focus_time(self, context: str, now: datetime):
+    def focus_time(self, context: str, now: datetime, reported=None):
         """Returns (iso_or_None, understood). The model calls resolve_time with what was said; the function does the arithmetic."""
         self.trace = getattr(self, 'trace', {})
         body = {"model": self.model, "temperature": 0, "max_tokens": 80, "stream": False, "reasoning_effort": "none",
-                "messages": [{"role": "system", "content": ("/no_think\n" if "qwen3" in self.model else "") + self.TIME_PROMPT},
-                             {"role": "user", "content": "Incident description: " + context}],
-                "tools": self.TIME_TOOL}
+                "messages": [{"role": "system", "content": ("/no_think\n" if "qwen3" in self.model else "") + (self.TIME_SHIFT_PROMPT + " " if reported else "") + self.TIME_PROMPT},
+                             {"role": "user", "content": (f"Time already in the report: {str(reported).replace('T', ' ')[:16]}\n" if reported else "") + "Incident description: " + context}],
+                "tools": self.TIME_TOOL if reported else self.time_tool_plain(), "tool_choice": "required"}
         try:
             req = urllib.request.Request(self.base + "/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=self.timeout) as r:
                 msg = json.load(r)["choices"][0]["message"]
-        except Exception:
+        except Exception as e:
+            self.trace["time"] = "time call failed: " + str(e)[:100]
             return None, False
-        args = None
+        name, args = None, None
         for tc in msg.get("tool_calls") or []:
-            if tc.get("function", {}).get("name") == "resolve_time":
-                args = tc["function"].get("arguments") or {}
-                break
-        if args is None:                                       # some servers answer in text: accept a JSON object there too
+            name = tc.get("function", {}).get("name"); args = tc["function"].get("arguments") or {}
+            break
+        if name is None:                                       # some servers answer in text: accept a JSON object there too
             try:
-                args = _json_from(msg.get("content") or "")
+                obj = _first_json(msg.get("content") or "")                      # the model wrote the call as text: take the first complete one
+                if isinstance(obj, dict) and obj.get("name") and "arguments" in obj: name, args = obj["name"], obj["arguments"]
+                else: name, args = "resolve_time", obj
             except Exception:
+                self.trace["time"] = "no function was called; the model said: " + str(msg.get("content") or "")[:100]
                 return None, False
         if isinstance(args, str):
             try: args = json.loads(args)
             except Exception: return None, False
-        args = {k: args.get(k) for k in ("minutes_ago", "hour", "minute", "period", "clock", "day", "just_now")}
-        iso = self.resolve_time(now, **args)
-        self.trace["time"] = "resolve_time(" + ", ".join(f"{k}={v}" for k, v in args.items() if v not in (None, "")) + ")" + (f" → {iso}" if iso else "")
+        args = self.time_args(name, args if isinstance(args, dict) else {})
+        iso = self.resolve_time(now, reported=reported, **args)
+        self.trace["time"] = name + "(" + ", ".join(f"{k}={v}" for k, v in args.items() if v not in (None, "")) + ")" + (f" → {iso}" if iso else "")
         return iso, True
 
     def focus_type(self, context: str):
@@ -382,7 +448,7 @@ class OpenAICompatExtractor:
                     scopes = list(dict.fromkeys([text, ctx]))
                     for scope in scopes:
                         if scope is text or not (f.get("location") or draft.get("location") or vague):
-                            place, specific = self.focus_location(scope)
+                            place, specific = self.focus_location(ctx)       # the place is read from everything said, so a follow-up adds to it
                             if place and not specific:
                                 vague = place
                                 f.pop("location", None)                       # too general to store: ask for something narrower
@@ -393,7 +459,7 @@ class OpenAICompatExtractor:
                             elif scope is text and f.get("location") and not draft.get("location"):
                                 f.pop("location", None)                       # the main pass named a place the focused read could not find
                         if scope is text or not (f.get("datetime") or draft.get("datetime")):
-                            iso, understood = self.focus_time(scope, now)
+                            iso, understood = self.focus_time(scope, now, draft.get("datetime"))
                             if iso:
                                 f["datetime"] = iso
                             elif understood:

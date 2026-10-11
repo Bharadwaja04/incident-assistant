@@ -427,6 +427,7 @@
    },
    "text": "A pipe burst. Fire department called, minor.",
    "out": {
+    "location": "a pipe",
     "severity": "low"
    }
   },

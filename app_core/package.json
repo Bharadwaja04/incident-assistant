@@ -1,0 +1,9 @@
+{
+  "name": "incident-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types test/golden.test.ts && node --experimental-strip-types test/extractor.test.ts && node --experimental-strip-types test/session.test.ts && node --experimental-strip-types test/time.test.ts"
+  }
+}

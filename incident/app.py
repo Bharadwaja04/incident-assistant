@@ -36,6 +36,9 @@ class App:
         if a.asr == "whisper":
             from .asr import WhisperASR, DOMAIN_PROMPT
             whisper = WhisperASR(a.whisper_model, prompt=DOMAIN_PROMPT, denoise=a.denoise == "on")
+        elif a.asr == "board":                  # speech to text runs on the device (whisper-server on the board)
+            from .asr import BoardWhisperASR
+            whisper = BoardWhisperASR(a.asr_url)
         self.whisper = whisper
         self.ex = OpenAICompatExtractor(a.base_url, a.model, mode=a.mode)          # AI only: no rule-based extractor in the app
         self.cleaner = LLMCleaner(self.ex, rules_fallback=False) if a.cleaner == "llm" else None
@@ -181,7 +184,8 @@ def make_handler(app: App):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--asr", choices=["text", "whisper"], default="text")
+    ap.add_argument("--asr", choices=["text", "whisper", "board"], default="text")
+    ap.add_argument("--asr-url", default="http://localhost:8081/inference", help="whisper-server on the board (after adb forward)")
     ap.add_argument("--whisper-model", default="base")
     ap.add_argument("--extractor", choices=["llm"], default="llm", help="kept for old commands; the app is AI-only")
     ap.add_argument("--base-url", default="http://localhost:11434/v1")
@@ -194,7 +198,7 @@ def main():
     ap.add_argument("--port", type=int, default=8000)
     a = ap.parse_args()
     app = App(a)
-    print(f"Incident Assistant on http://localhost:{a.port}   asr={'whisper ' + a.whisper_model if app.whisper else 'typed text'}  llm={getattr(app.ex, 'name', 'llm')}  cleaner={'AI (guarded)' if app.cleaner else 'off'}")
+    print(f"Incident Assistant on http://localhost:{a.port}   asr={('board ' + a.asr_url) if a.asr == 'board' else ('whisper ' + a.whisper_model) if app.whisper else 'typed text'}  llm={getattr(app.ex, 'name', 'llm')}  cleaner={'AI (guarded)' if app.cleaner else 'off'}")
     ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(app)).serve_forever()
 
 

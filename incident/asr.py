@@ -91,3 +91,26 @@ class WhisperASR:
         words = [(w.word.strip(), w.probability) for sg in segs for w in (sg.words or [])]
         timings = [(w.word.strip(), w.start, w.end) for sg in segs for w in (sg.words or [])]
         return ASRResult(text, time.perf_counter() - t0, info.duration, conf, words, timings, stats)
+
+
+class BoardWhisperASR:
+    """Speech to text on the DEVICE: posts the recording to whisper-server running on the board (reached through adb forward).
+    The audio is transcribed by the board; the laptop only moves bytes. Same interface as WhisperASR."""
+    def __init__(self, url="http://localhost:8081/inference", language="en", timeout=120):
+        self.url, self.language, self.timeout = url, language, timeout
+
+    def transcribe(self, path: str, words: bool = True) -> ASRResult:
+        import json, urllib.request, uuid
+        t0 = time.perf_counter()
+        b = uuid.uuid4().hex
+        data = open(path, "rb").read()
+        parts = []
+        for k, v in (("response_format", "json"), ("language", self.language), ("temperature", "0.0")):
+            parts.append(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode())
+        parts.append(f'--{b}\r\nContent-Disposition: form-data; name="file"; filename="a.wav"\r\nContent-Type: audio/wav\r\n\r\n'.encode() + data + b"\r\n")
+        parts.append(f"--{b}--\r\n".encode())
+        req = urllib.request.Request(self.url, b"".join(parts), {"Content-Type": f"multipart/form-data; boundary={b}"})
+        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            text = (json.load(r).get("text") or "").strip()
+        text = re.sub(r"\s+", " ", re.sub(r"\[[A-Z _]+\]|\([a-z ]+\)", " ", text)).strip()      # drop [BLANK_AUDIO] style tags
+        return ASRResult(text, time.perf_counter() - t0, wav_seconds(path))

@@ -9,3 +9,13 @@ reports/
 _backup_before_plan_alignment/
 *.tgz
 *.webm
+# big files fetched by tts/start_tts.sh instructions (voice model and runtime binary)
+tts/vits-piper-*/
+tts/sherpa-onnx-offline-tts
+tts/*.tar.bz2
+# scratch
+_to_delete/
+.fuse_hidden*
+eval/.fuse_hidden*
+node_modules/
+*.bak
